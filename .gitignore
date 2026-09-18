@@ -1,0 +1,19 @@
+.vercel
+.env*
+!.env.example
+node_modules/
+.next/
+.eve/
+.output/
+*.tsbuildinfo
+.local/
+.DS_Store
+# Local CLI-installed agent skills and credential files
+.agents/skills/
+skills-lock.json
+.npmrc
+.netrc
+*.pem
+*.key
+*.p12
+*.pfx
