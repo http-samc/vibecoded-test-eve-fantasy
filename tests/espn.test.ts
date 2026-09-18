@@ -1,8 +1,20 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parsePlayer, fetchSnapshot } from "../lib/espn";
+import { parsePlayer, fetchSnapshot, EspnRequestError } from "../lib/espn";
 import { defaultSettings } from "../lib/types";
 const settings = { ...defaultSettings, leagueId: "123", teamId: 1 };
+test("definitive ESPN rejections are distinguished from uncertain timeout and server responses", () => {
+  assert.equal(
+    new EspnRequestError("rejected", 409).definitivelyRejected,
+    true,
+  );
+  assert.equal(new EspnRequestError("auth", 403).definitivelyRejected, true);
+  assert.equal(
+    new EspnRequestError("timeout", 408).definitivelyRejected,
+    false,
+  );
+  assert.equal(new EspnRequestError("server", 503).definitivelyRejected, false);
+});
 function rawPlayer() {
   return {
     id: 1,

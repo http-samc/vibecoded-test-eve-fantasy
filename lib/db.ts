@@ -102,5 +102,7 @@ export async function dashboardData() {
       message?: string;
     } | null,
     lineupWritesEnabled: process.env.ESPN_LINEUP_WRITES_ENABLED === "true",
+    waiverWritesEnabled: process.env.ESPN_WAIVER_WRITES_ENABLED === "true",
+    tradeWritesEnabled: process.env.ESPN_TRADE_WRITES_ENABLED === "true",
   };
 }

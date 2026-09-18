@@ -56,6 +56,7 @@ const playerSchema = z
     proTeamId: z.number(),
     eligibleSlots: z.array(z.number()).default([]),
     injuryStatus: z.string().optional(),
+    droppable: z.boolean().optional(),
     stats: z.array(statSchema).default([]),
   })
   .passthrough();
@@ -63,13 +64,25 @@ const entrySchema = z
   .object({
     lineupSlotId: z.number().optional(),
     status: z.string().optional(),
-    playerPoolEntry: z.object({ player: playerSchema }).optional(),
+    lineupLocked: z.boolean().optional(),
+    rosterLocked: z.boolean().optional(),
+    tradeLocked: z.boolean().optional(),
+    waiverProcessDate: z.number().optional(),
+    playerPoolEntry: z
+      .object({
+        player: playerSchema,
+        rosterLocked: z.boolean().optional(),
+        tradeLocked: z.boolean().optional(),
+        lineupLocked: z.boolean().optional(),
+      })
+      .optional(),
     player: playerSchema.optional(),
   })
   .passthrough();
 const teamSchema = z
   .object({
     id: z.number(),
+    owners: z.array(z.string()).optional(),
     name: z.string().optional(),
     location: z.string().optional(),
     nickname: z.string().optional(),
@@ -155,6 +168,18 @@ export function seasonBase(
 ) {
   return `https://lm-api-${write ? "writes" : "reads"}.fantasy.espn.com/apis/v3/games/${s.sport === "football" ? "ffl" : "fba"}/seasons/${s.season}`;
 }
+export class EspnRequestError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+  ) {
+    super(message);
+    this.name = "EspnRequestError";
+  }
+  get definitivelyRejected() {
+    return this.status >= 400 && this.status < 500 && this.status !== 408;
+  }
+}
 export async function espnRequest(
   url: string,
   credentials: EspnCredentials,
@@ -175,13 +200,18 @@ export async function espnRequest(
   });
   if (!response.ok) {
     if ([401, 403].includes(response.status))
-      throw new Error(
+      throw new EspnRequestError(
         "ESPN did not authorize this request. Refresh the ESPN cookies in Connections.",
+        response.status,
       );
     if (response.status === 429)
-      throw new Error("ESPN is rate limiting requests. Try again later.");
-    throw new Error(
+      throw new EspnRequestError(
+        "ESPN is rate limiting requests. Try again later.",
+        response.status,
+      );
+    throw new EspnRequestError(
       `ESPN request failed (${response.status}). No change has been confirmed.`,
+      response.status,
     );
   }
   if (response.status === 204) return null;
@@ -253,8 +283,17 @@ export function parsePlayer(
     actual: stat(0),
     injury: p.injuryStatus ?? "ACTIVE",
     gameTime: game ? new Date(game.date).toISOString() : null,
-    locked: !game || game.date <= Date.now(),
+    locked:
+      Boolean(entry.lineupLocked || entry.playerPoolEntry?.lineupLocked) ||
+      !game ||
+      game.date <= Date.now(),
     availability: entry.status,
+    waiverProcessAt: entry.waiverProcessDate
+      ? new Date(entry.waiverProcessDate).toISOString()
+      : null,
+    droppable: p.droppable,
+    rosterLocked: entry.rosterLocked ?? entry.playerPoolEntry?.rosterLocked,
+    tradeLocked: entry.tradeLocked ?? entry.playerPoolEntry?.tradeLocked,
   };
 }
 export async function fetchSnapshot(
@@ -318,6 +357,9 @@ export async function fetchSnapshot(
     id: randomUUID(),
     fetchedAt: new Date().toISOString(),
     leagueId: s.leagueId,
+    accountOwnsTeam:
+      team.owners?.some((id) => id.toLowerCase() === c.swid.toLowerCase()) ??
+      false,
     leagueName: league.settings.name,
     teamName: teamName(team),
     teamId: s.teamId,

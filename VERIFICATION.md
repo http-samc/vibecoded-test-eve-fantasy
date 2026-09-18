@@ -1,29 +1,25 @@
-# Verification — September 17, 2026
+# Verification — September 18, 2026
 
 Production: https://eve-fantasy.vercel.app
 
 Vercel scope/project: `httpsamcs-projects/eve-fantasy`.
 
-Latest verified deployment: `dpl_GRcrceyZEovbiWwkrEJEqB7KiufK` (`READY`).
+## Verified
 
-## Passed
+- 26 automated tests pass, including standing automatic permissions for every supported action type, pause/approval/observe enforcement, trade deduplication identity, negative ESPN defense IDs, immediate free-agent versus waiver payloads, protected/undroppable players, roster capacity, lock handling, and phone normalization.
+- TypeScript and the Next.js/Eve production build pass.
+- The connected ESPN account's ownership of the selected team was verified. A real, recommended lineup adjustment was submitted once and its three assignments were verified by reading ESPN back.
+- The lineup result was accepted by Photon and recorded with a provider message ID.
+- Full autopilot is saved in production: scheduled reviews on, paused off, all three action modes automatic, and the corresponding production execution switches enabled.
+- A fresh production review completed with current league data and web research. It found no further warranted moves, recorded its hold decisions, and sent its digest through Photon.
+- The settings page shows Autopilot enabled; the previous approval-required warning is gone.
+- Vercel Cron dispatches every five minutes. The application selects due daily, pregame, and pre-waiver reviews using the configured timezone and ESPN timestamps.
+- Private APIs require owner authentication. Local environment files, credentials, access codes, receipts, and runtime traces remain excluded from Git and deployments.
 
-- 16 automated tests: legal lineup optimization, FLEX assignment, game locks, missing projections, stale/changed roster rejection, protected players, FAAB limits, trade ownership and item direction, ESPN normalization/error handling, session signatures, authenticated encryption, and daylight-saving scheduling.
-- TypeScript check and production Next.js/Eve build.
-- Dependency audit: zero reported vulnerabilities after patching the transitive OpenTelemetry core dependency.
-- Browser: owner login, authenticated dashboard, connection form, saved pause setting, and restoration to unpaused observation mode.
-- Production: Eve health HTTP 200, unauthenticated dashboard and Eve session requests HTTP 401, owner login HTTP 200 with Secure/HttpOnly cookie, authenticated dashboard/settings HTTP 200.
-- Registered five-minute Eve dispatcher in Vercel Cron. The final deployment's dispatcher was triggered through the CLI, and an authenticated request with the Vercel schedule header returned HTTP 200 / `{"success":true}`. Anonymous cron requests return HTTP 401. A bearer-only request returns HTTP 400 because Nitro also requires `x-vercel-cron-schedule`.
-- Existing `photon/oura-rivals` connector attached to the new project; credential resolution succeeds. Its Oura trigger destination is unchanged.
-- $10/month AI Gateway project budget configured and read back through the CLI.
+## Operational limits
 
-## Activation dependencies and verification limits
-
-- No ESPN league, team, or session cookies have been provided. ESPN calls have fixture tests; the real account read and write flows have not been verified.
-- No notification recipient has been entered. Photon credentials were checked, but no text was sent.
-- After explicit owner approval, a one-time $5 Gateway credit top-up succeeded. Vercel charged $5.45: $5 credits plus a $0.45 payment processing fee, with no tax. No auto-recharge settings were changed.
-- Production Eve now completes a durable turn using `openai/gpt-5.6-terra`, calls `get_status`, performs Gateway Exa web search, and returns a cited official ESPN scoring page. The run reached `turn.completed`; the successful step clears the dashboard Gateway blocker. Full fantasy review execution still awaits the ESPN connection.
-- All live ESPN write flags remain disabled. Football lineup changes, waiver claims, and equal-count trade offers have guarded adapters, but none has been executed against the user's account.
-- Daily reviews remain disabled until the owner completes setup and enables them. Scheduled dispatch itself is installed.
-
-The deployed app is ready for private account setup; it is not yet actively managing a team.
+- Real lineup execution is verified. Waiver and trade submission paths have policy/payload tests and are enabled under standing authorization, but no artificial acquisition or trade was made just to test them.
+- The adapter supports equal-count trade offers, not incoming trade acceptance or unequal-count trades.
+- Uncertain ESPN outcomes stop further mutations until reconciliation establishes what happened. Explicit API rejections are recorded as failures rather than ambiguous writes.
+- ESPN cookie expiry or exhausted Gateway credits can require owner intervention. A $10/month Gateway project budget remains configured.
+- Proactive messages use the existing Photon connector; Oura's incoming webhook routing is unchanged.

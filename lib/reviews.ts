@@ -12,6 +12,8 @@ import { fetchSnapshot } from "./espn";
 import { optimizeLineup } from "./lineup";
 import { deliverNotifications } from "./notifications";
 import type { Snapshot, Settings, Proposal } from "./types";
+import { proposedStatus } from "./policy";
+import { executeReadyActions } from "./autopilot";
 
 export const evidenceSchema = z.object({
   title: z.string().max(180),
@@ -29,10 +31,34 @@ export const proposalSchema = z.object({
   playerIds: z.array(z.number().int()).max(8),
   targetTeamId: z.number().int().optional(),
   bid: z.number().nonnegative().optional(),
-  addPlayerId: z.number().int().positive().optional(),
-  dropPlayerId: z.number().int().positive().optional(),
-  givePlayerIds: z.array(z.number().int().positive()).max(5).optional(),
-  receivePlayerIds: z.array(z.number().int().positive()).max(5).optional(),
+  addPlayerId: z
+    .number()
+    .int()
+    .refine((id) => id !== 0)
+    .optional(),
+  dropPlayerId: z
+    .number()
+    .int()
+    .refine((id) => id !== 0)
+    .optional(),
+  givePlayerIds: z
+    .array(
+      z
+        .number()
+        .int()
+        .refine((id) => id !== 0),
+    )
+    .max(5)
+    .optional(),
+  receivePlayerIds: z
+    .array(
+      z
+        .number()
+        .int()
+        .refine((id) => id !== 0),
+    )
+    .max(5)
+    .optional(),
   sources: z.array(evidenceSchema).max(6),
 });
 export const reportSchema = z.object({
@@ -110,6 +136,8 @@ export async function prepareReview(id: string, sessionId: string) {
     await saveSnapshot(snapshot);
     await db()`UPDATE reviews SET snapshot_id=${snapshot.id} WHERE id=${id}`;
   }
+  const pendingActions =
+    await db()`SELECT status,proposal,result FROM actions WHERE status IN ('ready','executing','submitted','unknown','awaiting_approval') ORDER BY created_at DESC LIMIT 20`;
   return {
     reviewId: id,
     settings: {
@@ -121,11 +149,12 @@ export async function prepareReview(id: string, sessionId: string) {
       protectedPlayers: settings.protectedPlayers,
     },
     snapshot,
+    pendingActions,
     lineup: optimizeLineup(snapshot),
     notes: [
       "ESPN projections are the current numerical baseline. No independent paid projection feed is configured.",
       "Missing game times lock players conservatively. Missing projections prevent automatic optimization.",
-      "Trade and waiver execution requires separate owner approval and enabled, validated adapters. Record exact proposed terms only.",
+      "Automatic mode submits eligible actions without owner approval; approve mode waits for the owner; observe mode records ideas only. Do not duplicate pending claims or offers. Propose moves only when they improve the team.",
     ],
   };
 }
@@ -133,7 +162,12 @@ export async function finishReview(input: z.infer<typeof reportSchema>) {
   const rows = await db()`SELECT * FROM reviews WHERE id=${input.reviewId}`;
   const review = rows[0];
   if (!review) throw new Error("Review not found.");
-  if (review.status === "completed") return { status: "already_completed" };
+  if (review.status === "completed") {
+    await executeReadyActions(input.reviewId);
+    await queueReviewDigests();
+    await deliverNotifications();
+    return { status: "already_completed" };
+  }
   if (review.status !== "running" || !review.snapshot_id)
     throw new Error("Review is inactive or has no snapshot.");
   const [snapshotRow, settings] = await Promise.all([
@@ -185,40 +219,39 @@ export async function finishReview(input: z.infer<typeof reportSchema>) {
   const sql = db();
   const actionIds = proposals.map(() => randomUUID());
   const statements = proposals.map((proposal, i) => {
-    const mode =
-      proposal.kind === "lineup"
-        ? settings.lineupMode
-        : proposal.kind === "waiver"
-          ? settings.waiverMode
-          : settings.tradeMode;
-    const status =
-      proposal.kind === "hold"
-        ? "considered"
-        : mode === "observe"
-          ? "proposed"
-          : "awaiting_approval";
+    const status = proposedStatus(proposal, settings);
     return sql`INSERT INTO actions (id,review_id,action_key,status,proposal,expires_at)
       SELECT ${actionIds[i]},${input.reviewId},${`${input.reviewId}:${i}`},${status},${JSON.stringify(proposal)}::jsonb,now()+interval '6 hours'
       WHERE EXISTS (SELECT 1 FROM reviews WHERE id=${input.reviewId} AND status='running') ON CONFLICT DO NOTHING`;
   });
-  const message = `Eve · Fantasy review\n\n${input.summary.slice(0, 1300)}\n\n${proposals.filter((p) => p.kind !== "hold").length} moves considered. No changes confirmed yet.\n${appOrigin()}/activity`;
   await sql.transaction([
     ...statements,
     sql`UPDATE reviews SET status='completed',summary=${input.summary},evidence=${JSON.stringify(input.evidence)}::jsonb,completed_at=now() WHERE id=${input.reviewId} AND status='running'`,
-    sql`INSERT INTO notification_outbox (id,operation_key,body) VALUES (${randomUUID()},${`review:${input.reviewId}`},${message}) ON CONFLICT DO NOTHING`,
   ]);
-  if (
-    settings.lineupMode === "automatic" &&
-    !settings.paused &&
-    process.env.ESPN_LINEUP_WRITES_ENABLED === "true"
-  ) {
-    const { executeLineupAction } = await import("./execution");
-    for (let i = 0; i < proposals.length; i++)
-      if (proposals[i].kind === "lineup")
-        await executeLineupAction(actionIds[i], false);
-  }
+  await executeReadyActions(input.reviewId);
+  await queueReviewDigests();
   await deliverNotifications();
-  return { status: "completed", actions: proposals.length };
+  const outcomes =
+    await db()`SELECT status,proposal->>'title' AS title,result FROM actions WHERE review_id=${input.reviewId} ORDER BY created_at`;
+  return { status: "completed", actions: proposals.length, outcomes };
+}
+export async function queueReviewDigests() {
+  const reviews =
+    await db()`SELECT r.id,r.summary FROM reviews r WHERE r.status='completed'
+    AND NOT EXISTS(SELECT 1 FROM actions a WHERE a.review_id=r.id AND a.status IN ('ready','executing'))
+    AND NOT EXISTS(SELECT 1 FROM notification_outbox n WHERE n.operation_key='review:'||r.id::text)
+    ORDER BY r.started_at LIMIT 10`;
+  for (const review of reviews) {
+    const counts =
+      await db()`SELECT status,count(*)::int AS count FROM actions WHERE review_id=${review.id} AND proposal->>'kind'<>'hold' GROUP BY status`;
+    const outcomes = counts.length
+      ? counts
+          .map((r) => `${r.count} ${r.status.replaceAll("_", " ")}`)
+          .join(", ")
+      : "No changes needed.";
+    const body = `Eve · Fantasy review\n\n${review.summary?.slice(0, 1300) ?? "Review complete."}\n\nMoves: ${outcomes}\n${appOrigin()}/activity`;
+    await db()`INSERT INTO notification_outbox(id,operation_key,body) VALUES (${randomUUID()},${`review:${review.id}`},${body}) ON CONFLICT DO NOTHING`;
+  }
 }
 export function scheduledOccurrence(
   settings: Settings,
@@ -255,6 +288,18 @@ export function scheduledOccurrence(
     for (const lead of [60, 15])
       if (minutes <= lead && minutes > lead - 5)
         return `prelock:${settings.leagueId}:${t}:${lead}`;
+  }
+  const waiverTimes = [
+    ...new Set(
+      snapshot?.freeAgents
+        ?.map((p) => p.waiverProcessAt)
+        .filter((t): t is string => Boolean(t)) ?? [],
+    ),
+  ];
+  for (const time of waiverTimes) {
+    const minutes = (new Date(time).getTime() - now.getTime()) / 60000;
+    if (minutes <= 60 && minutes > 55)
+      return `waiver:${settings.leagueId}:${time}`;
   }
   return Number(get("hour")) >= settings.digestHour
     ? `daily:${settings.leagueId}:${settings.season}:${day}`

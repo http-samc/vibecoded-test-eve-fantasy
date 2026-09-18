@@ -7,7 +7,7 @@ Private ESPN fantasy dashboard and manager, deployed to [eve-fantasy.vercel.app]
 1. Open the site and enter the owner access code from `.local/access-code.txt` on the setup computer. This file is ignored by Git and excluded from deployments.
 2. In Settings, supply the sport, season, league URL, and ESPN `espn_s2`/`SWID` cookies. If the URL does not identify your team, the form lists the league's teams after verification.
 3. Save the phone number already registered with the shared `photon/oura-rivals` connector and send a test text. Only outgoing fantasy messages use this connector; existing Oura webhook routing is unchanged.
-4. Ensure AI Gateway credits are available, run a manual review, then enable scheduled reviews. Start with observation mode.
+4. Ensure AI Gateway credits are available, choose Full autopilot to enable scheduled reviews and automatic execution, or choose individual action modes.
 
 Cookies are encrypted with AES-256-GCM in Postgres. The encryption key, owner authentication secrets, and service token live in Vercel environment variables. Secrets never enter model context. The owner session is signed, expires in seven days, and uses an HTTP-only SameSite cookie. The browser and Eve APIs both require authentication.
 
@@ -17,8 +17,8 @@ Cookies are encrypted with AES-256-GCM in Postgres. The encryption key, owner au
 - A deterministic lineup optimizer, grounded research through Eve's Gateway search tool, and stored candidate decisions and citations.
 - Daily review scheduling in the configured timezone plus 60- and 15-minute pregame windows, when game times are available. A run key and database uniqueness prevent overlapping team reviews.
 - Eve chat, pause/resume, per-action policy settings, review activity, and a durable Photon outbox.
-- A guarded football lineup transaction adapter with fresh-state checks and ESPN read-back. **Live writes are disabled** until checked against the connected league and enabled by setting `ESPN_LINEUP_WRITES_ENABLED=true` in production. Do not enable based solely on unit tests.
-- Approval-gated football waiver claims and equal-count trade offers, with exact visible player terms, protected-player and FAAB checks, transaction receipts, and background reconciliation. They remain disabled until separately verified; enable with `ESPN_WAIVER_WRITES_ENABLED` or `ESPN_TRADE_WRITES_ENABLED`. Incoming trade acceptance, immediate free-agent adds, and unequal-count trades are not supported. A submitted offer or claim is never reported as a completed roster change.
+- A guarded football lineup transaction adapter with fresh-state checks and ESPN read-back. A real lineup adjustment has been verified against the connected league. Production execution is enabled by `ESPN_LINEUP_WRITES_ENABLED=true`; previews stay disabled.
+- Football free-agent adds, waiver claims, and equal-count trade offers in observe, approve, or automatic mode, with exact visible player terms, protected-player and FAAB checks, transaction receipts, and background reconciliation. Production capabilities use `ESPN_WAIVER_WRITES_ENABLED` and `ESPN_TRADE_WRITES_ENABLED`. Full autopilot is standing authorization to submit eligible actions; individual approvals are required only in approve mode. Incoming trade acceptance and unequal-count trades are not supported. A submitted offer or claim is never reported as a completed roster change.
 
 ESPN is an unofficial cookie-authenticated integration. Missing game times conservatively lock players; missing projections cause the optimizer to hold. NBA reads are supported by the common adapter but scoring-category strategy and NBA writes are not enabled. ESPN is the only structured projection source currently configured. Research may corroborate or challenge it, but does not fabricate replacement projections.
 
@@ -61,3 +61,7 @@ The paid model route initially returned `byok_requires_paid_credits`. An owner-a
 - [Published ESPN transaction shape reference](https://github.com/heyitaki/espn-fantasy-football-mcp/blob/327d58c41dfcb8cc8ddefcf62fb39674cb43ebff/src/espn/transactions.ts)
 - [AI Gateway search](https://vercel.com/docs/ai-gateway/models-and-providers/web-search)
 - [Detailed original plan](PLAN.md)
+
+## Full autopilot
+
+The owner authorized unattended management. Automatic proposals enter a durable `ready` queue; the review and recurring dispatcher both drain it, so a crash after review completion does not lose the move. Every executor rechecks current policy, ownership, roster state, and ESPN locks. Definitive 4xx rejections are recorded as failed; ambiguous outcomes are reconciled before another mutation. Exact pending offers and claims are deduplicated. Digests are queued after execution settles and include recorded outcomes. ESPN cookie expiry and exhausted AI credits can still need owner intervention.

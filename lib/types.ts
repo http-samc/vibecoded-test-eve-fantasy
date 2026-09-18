@@ -11,7 +11,7 @@ export interface Settings {
   scheduled: boolean;
   lineupMode: PolicyMode;
   waiverMode: PolicyMode;
-  tradeMode: "observe" | "approve";
+  tradeMode: PolicyMode;
   monthlyAiBudget: number;
   maxWaiverBid: number;
   protectedPlayers: string[];
@@ -52,6 +52,10 @@ export interface Player {
   gameTime: string | null;
   locked: boolean;
   availability?: string;
+  droppable?: boolean;
+  rosterLocked?: boolean;
+  tradeLocked?: boolean;
+  waiverProcessAt?: string | null;
 }
 export interface Standing {
   id: number;
@@ -85,6 +89,7 @@ export interface Snapshot {
   acquisitionSettings: unknown;
   tradeSettings: unknown;
   faabRemaining?: number | null;
+  accountOwnsTeam?: boolean;
 }
 export interface Evidence {
   title: string;

@@ -27,7 +27,7 @@ const snapshot = {
   fetchedAt: new Date(now).toISOString(),
   scoringPeriod: 3,
   roster: [player(1), player(2)],
-  freeAgents: [player(4)],
+  freeAgents: [{ ...player(4), availability: "WAIVERS" }],
   slotCounts: { 20: 3 },
   faabRemaining: 50,
   leagueRosters: [{ teamId: 2, name: "Other", roster: [player(3)] }],
@@ -174,5 +174,40 @@ test("paused and observation policies cannot submit transactions", () => {
         now,
       ),
     /recommendations only/,
+  );
+});
+
+test("available free agents use immediate acquisitions, and reserve capacity cannot justify a normal roster add", () => {
+  const free = {
+    ...snapshot,
+    freeAgents: [{ ...player(4), availability: "FREEAGENT" }],
+  };
+  assert.equal(transactionPayload(waiver, free, "fixture").type, "FREEAGENT");
+  assert.equal(
+    "bidAmount" in transactionPayload(waiver, free, "fixture"),
+    false,
+  );
+  assert.throws(
+    () =>
+      validateTransaction(
+        { ...waiver, dropPlayerId: undefined, bid: 0 },
+        { ...free, slotCounts: { 20: 2, 21: 1 } },
+        settings,
+        now,
+      ),
+    /roster is full/,
+  );
+  assert.throws(
+    () =>
+      validateTransaction(
+        waiver,
+        {
+          ...snapshot,
+          roster: [player(1), { ...player(2), droppable: false }],
+        },
+        settings,
+        now,
+      ),
+    /does not currently allow/,
   );
 });

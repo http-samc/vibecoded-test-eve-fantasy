@@ -52,3 +52,17 @@ test("prelock windows have a stable key and are never dispatched after kickoff",
     )?.startsWith("daily:"),
   );
 });
+test("waiver reviews use ESPN's actual processing timestamp, before the daily digest", () => {
+  const snapshot = {
+    roster: [],
+    freeAgents: [{ waiverProcessAt: "2026-09-18T07:00:00.000Z" }],
+  } as unknown as Snapshot;
+  assert.equal(
+    scheduledOccurrence(s, snapshot, new Date("2026-09-18T06:02:00Z")),
+    "waiver:123:2026-09-18T07:00:00.000Z",
+  );
+  assert.equal(
+    scheduledOccurrence(s, snapshot, new Date("2026-09-18T07:01:00Z")),
+    null,
+  );
+});

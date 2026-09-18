@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     const result =
       rows[0].proposal.kind === "lineup"
         ? await executeLineupAction(id, true)
-        : await executeTransactionAction(id);
+        : await executeTransactionAction(id, true);
     await deliverNotifications();
     return Response.json(result);
   } catch (e) {

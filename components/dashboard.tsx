@@ -639,7 +639,7 @@ export function Dashboard({
                     {settings.waiverMode}. Trades: {settings.tradeMode}.{" "}
                     {data.lineupWritesEnabled
                       ? "Lineup execution is enabled."
-                      : "Live ESPN writes are disabled pending validation."}
+                      : "Live ESPN writes are disabled for this deployment."}
                   </p>
                 </div>
                 <Link href="/settings">
@@ -937,6 +937,45 @@ function SettingsPanel({
             </div>
             <ShieldCheck size={20} />
           </header>
+          <div className="policy-banner">
+            <div>
+              <strong>Full autopilot</strong>
+              <p>
+                Eve handles lineups, acquisitions, and trade offers. No routine
+                approvals.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="primary"
+              disabled={Boolean(busy)}
+              onClick={() =>
+                act("autopilot", async () => {
+                  const next = {
+                    ...preferences(),
+                    scheduled: true,
+                    paused: false,
+                    lineupMode: "automatic" as const,
+                    waiverMode: "automatic" as const,
+                    tradeMode: "automatic" as const,
+                  };
+                  await post("/api/settings", next);
+                  setForm(next);
+                  setNotice(
+                    "Full autopilot is enabled. Eve will text you the outcomes.",
+                  );
+                })
+              }
+            >
+              {form.scheduled &&
+              !form.paused &&
+              [form.lineupMode, form.waiverMode, form.tradeMode].every(
+                (mode) => mode === "automatic",
+              )
+                ? "Autopilot enabled"
+                : "Enable autopilot"}
+            </button>
+          </div>
           <div className="form-grid">
             <label className="full">
               Lineup changes
@@ -951,9 +990,7 @@ function SettingsPanel({
               >
                 <option value="observe">Recommend only</option>
                 <option value="approve">Ask for approval</option>
-                <option value="automatic">
-                  Automatic, once adapter is verified
-                </option>
+                <option value="automatic">Automatic — no approval</option>
               </select>
             </label>
             <label>
@@ -969,6 +1006,7 @@ function SettingsPanel({
               >
                 <option value="observe">Recommend only</option>
                 <option value="approve">Ask for approval</option>
+                <option value="automatic">Automatic — no approval</option>
               </select>
             </label>
             <label>
@@ -984,11 +1022,13 @@ function SettingsPanel({
               >
                 <option value="observe">Recommend only</option>
                 <option value="approve">Ask for approval</option>
+                <option value="automatic">Automatic — no approval</option>
               </select>
             </label>
             <p className="small muted full">
-              Each write adapter stays disabled until verified against your
-              league. Waivers and trade offers always require your approval.
+              Automatic mode lets Eve submit eligible moves without waiting for
+              you. It respects ESPN locks, protected players, and your spending
+              limit, then texts you the outcome.
             </p>
             <label className="full">
               Protected players (names or ESPN IDs, separated by commas)
@@ -1114,7 +1154,7 @@ function SettingsPanel({
             Your registered phone number
             <input
               type="tel"
-              placeholder="+1…"
+              placeholder="(415) 555-0123 or +country code"
               value={form.photonRecipient}
               onChange={(e) =>
                 setForm({ ...form, photonRecipient: e.target.value })
@@ -1122,9 +1162,10 @@ function SettingsPanel({
             />
           </label>
           <p className="small muted">
-            Daily summaries, approvals to review, and confirmed changes.
-            Existing Oura incoming routing is preserved; use this dashboard for
-            fantasy replies and approvals.
+            US numbers can use 10 digits; include the country code elsewhere.
+            Receive daily summaries and move outcomes. Existing Oura incoming
+            routing is preserved; use this dashboard for fantasy replies and
+            approvals.
           </p>
           <button
             type="button"

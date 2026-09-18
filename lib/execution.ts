@@ -1,7 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { db, getSettings, getCredentials, saveSnapshot } from "./db";
-import { fetchSnapshot, espnRequest, seasonBase } from "./espn";
+import {
+  fetchSnapshot,
+  espnRequest,
+  seasonBase,
+  EspnRequestError,
+} from "./espn";
 import { validateLineup } from "./lineup";
+import { requireActionPermission } from "./policy";
 import type { Proposal, Snapshot } from "./types";
 export function lineupPayload(
   proposal: Proposal,
@@ -28,9 +34,7 @@ export async function executeLineupAction(id: string, ownerApproved: boolean) {
     process.env.ESPN_LINEUP_WRITES_ENABLED !== "true" ||
     process.env.VERCEL_ENV !== "production"
   )
-    throw new Error(
-      "Live lineup changes are disabled until this adapter is verified for your league.",
-    );
+    throw new Error("Live lineup execution is disabled for this deployment.");
   const settings = await getSettings();
   if (settings.sport !== "football")
     throw new Error(
@@ -42,9 +46,13 @@ export async function executeLineupAction(id: string, ownerApproved: boolean) {
     throw new Error("Owner approval is required.");
   const credentials = await getCredentials();
   if (!credentials) throw new Error("ESPN is not connected.");
+  const unresolved =
+    await db()`SELECT id FROM actions WHERE status='unknown' LIMIT 1`;
+  if (unresolved.length)
+    throw new Error("The previous ESPN result is still being reconciled.");
   const claimed =
     await db()`UPDATE actions SET status='executing',execution_started_at=now(),approved_at=CASE WHEN ${ownerApproved} THEN now() ELSE approved_at END
-    WHERE id=${id} AND status IN ('awaiting_approval','proposed') AND expires_at>now() AND proposal->>'kind'='lineup'
+    WHERE id=${id} AND status IN ('ready','awaiting_approval','proposed') AND expires_at>now() AND proposal->>'kind'='lineup'
     RETURNING *`;
   if (!claimed.length)
     throw new Error(
@@ -54,6 +62,10 @@ export async function executeLineupAction(id: string, ownerApproved: boolean) {
   let submitted = false;
   try {
     const snapshot = await fetchSnapshot(settings, credentials);
+    if (!snapshot.accountOwnsTeam)
+      throw new Error(
+        "ESPN account ownership of the selected team could not be verified.",
+      );
     const original =
       await db()`SELECT s.data FROM reviews r JOIN snapshots s ON s.id=r.snapshot_id WHERE r.id=${claimed[0].review_id}`;
     if (
@@ -64,7 +76,9 @@ export async function executeLineupAction(id: string, ownerApproved: boolean) {
       throw new Error(
         "The scoring period or connected team changed. Run a new review.",
       );
-    validateLineup(proposal, snapshot, await getSettings());
+    const currentSettings = await getSettings();
+    requireActionPermission(proposal, currentSettings, ownerApproved);
+    validateLineup(proposal, snapshot, currentSettings);
     submitted = true;
     await espnRequest(
       `${seasonBase(settings, true)}/segments/0/leagues/${settings.leagueId}/transactions/`,
@@ -99,12 +113,19 @@ export async function executeLineupAction(id: string, ownerApproved: boolean) {
     ]);
     return { status, message };
   } catch (error) {
-    const message = submitted
+    const uncertain =
+      submitted &&
+      !(error instanceof EspnRequestError && error.definitivelyRejected);
+    const message = uncertain
       ? "The ESPN result is uncertain. Check your roster before any retry."
       : error instanceof Error
         ? error.message
         : "Lineup validation failed.";
-    await db()`UPDATE actions SET status=${submitted ? "unknown" : "failed"},result=${message} WHERE id=${id}`;
+    const sql = db();
+    await sql.transaction([
+      sql`UPDATE actions SET status=${uncertain ? "unknown" : "failed"},result=${message} WHERE id=${id}`,
+      sql`INSERT INTO notification_outbox(id,operation_key,body) VALUES (${randomUUID()},${`action:${id}`},${`Eve · ${proposal.title}: ${message}`}) ON CONFLICT DO NOTHING`,
+    ]);
     throw new Error(message);
   }
 }

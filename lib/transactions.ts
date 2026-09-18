@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { db, getCredentials, getSettings } from "./db";
-import { espnRequest, fetchSnapshot, seasonBase } from "./espn";
+import {
+  espnRequest,
+  fetchSnapshot,
+  seasonBase,
+  EspnRequestError,
+} from "./espn";
+import { requireActionPermission, transactionIdentity } from "./policy";
 import type { Proposal, Settings, Snapshot } from "./types";
 
 export function validateTransaction(
@@ -43,6 +49,14 @@ export function validateTransaction(
       (!owned(proposal.dropPlayerId) || protectedPlayer(proposal.dropPlayerId))
     )
       throw new Error("The player to drop is unavailable or protected.");
+    if (
+      proposal.dropPlayerId &&
+      (owned(proposal.dropPlayerId)?.droppable === false ||
+        owned(proposal.dropPlayerId)?.rosterLocked)
+    )
+      throw new Error(
+        "ESPN does not currently allow this player to be dropped.",
+      );
     const bid = proposal.bid ?? 0;
     if (!Number.isInteger(bid) || bid < 0 || bid > settings.maxWaiverBid)
       throw new Error("The waiver bid exceeds your policy limit.");
@@ -55,14 +69,18 @@ export function validateTransaction(
       );
     if (
       !proposal.dropPlayerId &&
-      snapshot.roster.length >=
-        Object.values(snapshot.slotCounts).reduce((a, b) => a + b, 0)
+      snapshot.roster.filter((p) => ![21, 24].includes(p.slotId)).length >=
+        Object.entries(snapshot.slotCounts).reduce(
+          (sum, [slot, count]) =>
+            sum + ([21, 24].includes(Number(slot)) ? 0 : count),
+          0,
+        )
     )
       throw new Error(
         "The roster is full. A drop must be included in this proposal.",
       );
   } else if (proposal.kind === "trade") {
-    if (settings.tradeMode !== "approve")
+    if (settings.tradeMode === "observe")
       throw new Error("Current policy allows trade recommendations only.");
     const give = proposal.givePlayerIds ?? [];
     const receive = proposal.receivePlayerIds ?? [];
@@ -85,6 +103,13 @@ export function validateTransaction(
     )
       throw new Error(
         "The trade ownership changed, or a protected player is included.",
+      );
+    if (
+      give.some((id) => owned(id)?.tradeLocked) ||
+      receive.some((id) => other.roster.find((p) => p.id === id)?.tradeLocked)
+    )
+      throw new Error(
+        "ESPN currently locks one of the players against trades.",
       );
     const rules = snapshot.tradeSettings as { deadlineDate?: number } | null;
     if (rules?.deadlineDate && rules.deadlineDate < now)
@@ -128,10 +153,18 @@ export function transactionPayload(
         })),
       ],
     };
+  const freeAgent =
+    snapshot.freeAgents.find((p) => p.id === proposal.addPlayerId)
+      ?.availability === "FREEAGENT";
   return {
     ...base,
-    type: "WAIVER",
-    bidAmount: snapshot.faabRemaining == null ? null : (proposal.bid ?? 0),
+    type: freeAgent ? "FREEAGENT" : "WAIVER",
+    ...(!freeAgent
+      ? {
+          bidAmount:
+            snapshot.faabRemaining == null ? null : (proposal.bid ?? 0),
+        }
+      : {}),
     items: [
       {
         playerId: proposal.addPlayerId,
@@ -151,7 +184,10 @@ export function transactionPayload(
   };
 }
 
-export async function executeTransactionAction(id: string) {
+export async function executeTransactionAction(
+  id: string,
+  ownerApproved = false,
+) {
   const [rows, settings, credentials] = await Promise.all([
     db()`SELECT * FROM actions WHERE id=${id}`,
     getSettings(),
@@ -170,22 +206,40 @@ export async function executeTransactionAction(id: string) {
     settings.sport !== "football"
   )
     throw new Error(
-      "Live waiver and trade submission remains disabled until its adapter is verified for your league.",
+      "Live acquisition or trade execution is disabled for this deployment.",
     );
   if (!credentials) throw new Error("ESPN is not connected.");
+  requireActionPermission(proposal, settings, ownerApproved);
   const unknown =
     await db()`SELECT id FROM actions WHERE status='unknown' LIMIT 1`;
   if (unknown.length)
     throw new Error(
       "The previous ESPN result is uncertain. Reconcile it before submitting another transaction.",
     );
+  const existing =
+    await db()`SELECT a.proposal FROM actions a JOIN reviews r ON r.id=a.review_id JOIN snapshots s ON s.id=r.snapshot_id WHERE a.id<>${id} AND a.status IN ('submitted','executing') AND s.data->>'leagueId'=${settings.leagueId} AND (s.data->>'teamId')::int=${settings.teamId}`;
+  if (
+    existing.some(
+      (a) => transactionIdentity(a.proposal) === transactionIdentity(proposal),
+    )
+  ) {
+    await db()`UPDATE actions SET status='rejected',result='An identical transaction is already pending on ESPN.' WHERE id=${id} AND status IN ('ready','proposed','awaiting_approval')`;
+    return {
+      status: "rejected",
+      message: "An identical transaction is already pending.",
+    };
+  }
   const claimed =
-    await db()`UPDATE actions SET status='executing',approved_at=now(),execution_started_at=now() WHERE id=${id} AND status IN ('proposed','awaiting_approval') AND expires_at>now() RETURNING id`;
+    await db()`UPDATE actions SET status='executing',approved_at=CASE WHEN ${ownerApproved} THEN now() ELSE approved_at END,execution_started_at=now() WHERE id=${id} AND status IN ('ready','proposed','awaiting_approval') AND expires_at>now() RETURNING id`;
   if (!claimed.length)
     throw new Error("This proposal has expired or was already handled.");
   let submitted = false;
   try {
     const snapshot = await fetchSnapshot(settings, credentials);
+    if (!snapshot.accountOwnsTeam)
+      throw new Error(
+        "ESPN account ownership of the selected team could not be verified.",
+      );
     const original =
       await db()`SELECT s.data FROM reviews r JOIN snapshots s ON s.id=r.snapshot_id WHERE r.id=${action.review_id}`;
     if (
@@ -197,6 +251,7 @@ export async function executeTransactionAction(id: string) {
         "The league, team, or scoring period changed. Run a fresh review.",
       );
     const current = await getSettings();
+    requireActionPermission(proposal, current, ownerApproved);
     validateTransaction(proposal, snapshot, current);
     // Reserve pending app claims when checking a positive FAAB bid.
     if (proposal.kind === "waiver" && (proposal.bid ?? 0) > 0) {
@@ -242,12 +297,19 @@ export async function executeTransactionAction(id: string) {
     ]);
     return { status, message };
   } catch (error) {
-    const message = submitted
+    const uncertain =
+      submitted &&
+      !(error instanceof EspnRequestError && error.definitivelyRejected);
+    const message = uncertain
       ? "The ESPN transaction result is uncertain. Check ESPN before any retry."
       : error instanceof Error
         ? error.message
         : "The transaction could not be validated.";
-    await db()`UPDATE actions SET status=${submitted ? "unknown" : "failed"},result=${message} WHERE id=${id}`;
+    const sql = db();
+    await sql.transaction([
+      sql`UPDATE actions SET status=${uncertain ? "unknown" : "failed"},result=${message} WHERE id=${id}`,
+      sql`INSERT INTO notification_outbox(id,operation_key,body) VALUES (${randomUUID()},${`action:${id}`},${`Eve · ${proposal.title}: ${message}`}) ON CONFLICT DO NOTHING`,
+    ]);
     throw new Error(message);
   }
 }
