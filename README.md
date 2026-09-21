@@ -2,13 +2,11 @@
 
 Private ESPN fantasy dashboard and manager, deployed to [eve-fantasy.vercel.app](https://eve-fantasy.vercel.app) in `httpsamcs-projects`. Eve runs on Vercel Workflow; its dispatcher is a Vercel Cron job every five minutes. Model calls and provider web search use AI Gateway. PostgreSQL stores snapshots, actions, and notification delivery records.
 
-Current deployment note: the separate Photon project is configured, but its provider rejects the registered recipient. Trade management and web chat work; text delivery and replies still need verification. See [VERIFICATION.md](VERIFICATION.md).
-
 ## Connect your team
 
 1. Open the site and enter the owner access code from `.local/access-code.txt` on the setup computer. This file is ignored by Git and excluded from deployments.
 2. In Settings, supply the sport, season, league URL, and ESPN `espn_s2`/`SWID` cookies. If the URL does not identify your team, the form lists the league's teams after verification.
-3. Save your phone number registered with `photon/eve-fantasy` and send a test text. Eve uses its own Photon project for outgoing texts and owner-only direct replies; Oura keeps its separate connector and routing.
+3. Save your phone number registered with `photon/eve-fantasy`. Send a first message to the assigned Eve number to complete Photon's contact opt-in, then verify the reply. Eve uses its own Photon project for outgoing texts and owner-only direct replies; Oura keeps its separate connector and routing.
 4. Ensure AI Gateway credits are available, choose Full autopilot to enable scheduled reviews and automatic execution, or choose individual action modes.
 
 Cookies are encrypted with AES-256-GCM in Postgres. The encryption key, owner authentication secrets, and service token live in Vercel environment variables. Secrets never enter model context. The owner session is signed, expires in seven days, and uses an HTTP-only SameSite cookie. The browser and Eve APIs both require authentication.
