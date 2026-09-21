@@ -6,7 +6,7 @@ import {
   seasonBase,
   EspnRequestError,
 } from "./espn";
-import { validateLineup } from "./lineup";
+import { validateLineup, describeLineupChange } from "./lineup";
 import { requireActionPermission } from "./policy";
 import type { Proposal, Snapshot } from "./types";
 export function lineupPayload(
@@ -104,7 +104,7 @@ export async function executeLineupAction(id: string, ownerApproved: boolean) {
     );
     const status = verified ? "verified" : "unknown";
     const message = verified
-      ? "The lineup change was verified on ESPN."
+      ? `Lineup verified on ESPN: ${describeLineupChange(proposal, after)}.`
       : "ESPN's final lineup did not match the request. No automatic retry will occur.";
     const sql = db();
     await sql.transaction([

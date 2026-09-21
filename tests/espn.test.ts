@@ -109,6 +109,11 @@ test("snapshot read tolerates unavailable enrichment without inventing data or e
     assert.deepEqual(s.freeAgents, []);
     assert.equal(s.standings[0].rank, 1);
     assert.equal(s.leagueId, "123");
+    assert.equal(
+      s.tradeInbox?.status,
+      "error",
+      "Missing transaction data must not become a successful empty inbox",
+    );
   } finally {
     globalThis.fetch = saved;
   }
@@ -121,6 +126,86 @@ test("expired credentials produce a bounded reconnection error without cookie co
     await assert.rejects(
       fetchSnapshot(settings, { espnS2: "fixture-sensitive", swid: "fixture" }),
       /Refresh the ESPN cookies/,
+    );
+  } finally {
+    globalThis.fetch = saved;
+  }
+});
+test("review snapshots include incoming ESPN offers, not just app-created actions", async () => {
+  const saved = globalThis.fetch;
+  let readTrades = false;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.includes("mTransactions2")) {
+      readTrades = true;
+      return Response.json({
+        transactions: [
+          {
+            id: "incoming-1",
+            type: "TRADE_PROPOSAL",
+            executionType: "EXECUTE",
+            status: "PENDING",
+            teamId: 2,
+            proposedDate: Date.now(),
+            expirationDate: Date.now() + 86400000,
+            items: [
+              { playerId: 1, fromTeamId: 1, toTeamId: 2, type: "TRADE" },
+              { playerId: 2, fromTeamId: 2, toTeamId: 1, type: "TRADE" },
+            ],
+          },
+        ],
+      });
+    }
+    if (url.includes("proTeamSchedules"))
+      return Response.json({ settings: { proTeams: [] } });
+    if (url.includes("kona_player_info")) return Response.json({ players: [] });
+    return Response.json({
+      scoringPeriodId: 3,
+      settings: {
+        name: "Fixture",
+        rosterSettings: { lineupSlotCounts: { 2: 1, 20: 5 } },
+      },
+      teams: [
+        {
+          id: 1,
+          name: "Our team",
+          roster: {
+            entries: [
+              { lineupSlotId: 2, playerPoolEntry: { player: rawPlayer() } },
+            ],
+          },
+        },
+        {
+          id: 2,
+          name: "Other team",
+          roster: {
+            entries: [
+              {
+                lineupSlotId: 2,
+                playerPoolEntry: {
+                  player: { ...rawPlayer(), id: 2, fullName: "Other player" },
+                },
+              },
+            ],
+          },
+        },
+      ],
+    });
+  };
+  try {
+    const snapshot = await fetchSnapshot(settings, {
+      espnS2: "fixture",
+      swid: "fixture",
+    });
+    assert.equal(readTrades, true, "A review must fetch the ESPN trade inbox");
+    assert.equal(snapshot.tradeInbox?.incoming.length, 1);
+    assert.equal(
+      snapshot.tradeInbox?.incoming[0].give[0].name,
+      "Fixture player",
+    );
+    assert.equal(
+      snapshot.tradeInbox?.incoming[0].receive[0].name,
+      "Other player",
     );
   } finally {
     globalThis.fetch = saved;

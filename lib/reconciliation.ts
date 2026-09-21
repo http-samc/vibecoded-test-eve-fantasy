@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { db, getSettings, getCredentials, saveSnapshot } from "./db";
 import { espnRequest, fetchSnapshot, seasonBase } from "./espn";
 import type { Proposal } from "./types";
+import { describeLineupChange } from "./lineup";
 export async function reconcileActions() {
   const sql = db();
   const interrupted =
@@ -50,9 +51,17 @@ export async function reconcileActions() {
       )
     ) {
       status = "verified";
-      message = "The requested lineup is now verified on ESPN.";
+      message = `Lineup verified on ESPN: ${describeLineupChange(proposal, current)}.`;
     } else if (action.external_id) {
-      const tx = transactions.find((t) => String(t.id) === action.external_id);
+      const raw = transactions.find((t) => String(t.id) === action.external_id);
+      const inbox = current.tradeInbox;
+      const offer =
+        proposal.kind === "trade" && inbox?.status === "ok"
+          ? [...inbox.incoming, ...inbox.outgoing, ...inbox.history].find(
+              (t) => t.id === action.external_id,
+            )
+          : undefined;
+      const tx = offer ? { id: offer.id, status: offer.status } : raw;
       if (tx?.status === "EXECUTED") {
         const rosterMatches =
           proposal.kind === "waiver"
@@ -76,14 +85,16 @@ export async function reconcileActions() {
         }
       } else if (
         tx &&
-        [
+        ([
           "CANCELED",
           "CANCELLED",
           "REJECTED",
+          "DECLINED",
           "FAILED",
           "EXPIRED",
           "VETOED",
-        ].includes(tx.status)
+        ].includes(tx.status) ||
+          tx.status.startsWith("FAILED"))
       ) {
         status = "failed";
         message = `ESPN reports this transaction as ${tx.status.toLowerCase()}.`;
@@ -96,7 +107,7 @@ export async function reconcileActions() {
     if (status) {
       await sql.transaction([
         sql`UPDATE actions SET status=${status},result=${message} WHERE id=${action.id} AND status IN ('submitted','unknown')`,
-        sql`INSERT INTO notification_outbox(id,operation_key,body) VALUES (${randomUUID()},${`reconciled:${action.id}:${status}`},${`Eve · ${message}`}) ON CONFLICT DO NOTHING`,
+        sql`INSERT INTO notification_outbox(id,operation_key,body) VALUES (${randomUUID()},${`reconciled:${action.id}:${status}`},${`Eve · ${proposal.title}: ${message}${action.external_id ? `\nESPN transaction: ${action.external_id}` : ""}`}) ON CONFLICT DO NOTHING`,
       ]);
     }
   }

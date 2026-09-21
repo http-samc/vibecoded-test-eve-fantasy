@@ -9,6 +9,7 @@ import { deliverNotifications } from "../../lib/notifications";
 import { reconcileActions } from "../../lib/reconciliation";
 import { executeReadyActions } from "../../lib/autopilot";
 import { randomUUID } from "node:crypto";
+import { pollTradeInbox } from "../../lib/trade-inbox";
 export default defineSchedule({
   cron: "*/5 * * * *",
   run({ waitUntil }) {
@@ -24,6 +25,9 @@ export default defineSchedule({
             getSettings(),
             latestSnapshot(),
           ]);
+          const tradeOccurrence = await pollTradeInbox(settings);
+          if (tradeOccurrence)
+            await startReview("incoming trade check", tradeOccurrence);
           const occurrence = scheduledOccurrence(settings, snapshot);
           if (occurrence)
             await startReview(

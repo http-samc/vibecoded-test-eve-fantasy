@@ -4,6 +4,14 @@ export const reserveSlots = (s: Snapshot) =>
   s.sport === "football" ? [20, 21, 24, 25] : [8, 9, 10];
 export const isStarter = (slot: number, s: Snapshot) =>
   !reserveSlots(s).includes(slot);
+export function describeLineupChange(proposal: Proposal, snapshot: Snapshot) {
+  return (proposal.assignments ?? [])
+    .map((move) => {
+      const p = snapshot.roster.find((p) => p.id === move.playerId);
+      return `${p?.name ?? `Player ${move.playerId}`} → ${p?.slot ?? `slot ${move.toSlot}`}`;
+    })
+    .join("; ");
+}
 export function optimizeLineup(snapshot: Snapshot): Proposal | null {
   const players = snapshot.roster.filter(
     (p) => p.slotId === benchSlot(snapshot) || isStarter(p.slotId, snapshot),

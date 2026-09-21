@@ -1,15 +1,22 @@
 import { createiMessageAdapter } from "@photon-ai/chat-adapter-imessage";
 import { connectPhotonCredentials } from "@vercel/connect/eve";
 import { db, getSettings } from "./db";
+import {
+  suppressQuietReviews,
+  suppressDuplicateMessages,
+  claimNotification,
+} from "./notification-queue";
 export async function deliverNotifications() {
   const settings = await getSettings();
   if (!process.env.PHOTON_CONNECTOR || !settings.photonRecipient) return;
   // A crashed sender may already have delivered. Never blindly resend that row.
   await db()`UPDATE notification_outbox SET status='unknown',last_error='Delivery interrupted; check the conversation before resending.' WHERE status='sending' AND lease_until < now()`;
-  const rows =
-    await db()`UPDATE notification_outbox SET status='sending',lease_until=now()+interval '2 minutes',attempts=attempts+1
-    WHERE id IN (SELECT id FROM notification_outbox WHERE status='pending' AND retry_at<=now() ORDER BY created_at LIMIT 3 FOR UPDATE SKIP LOCKED) RETURNING *`;
-  for (const row of rows) {
+  const sql = db();
+  await suppressQuietReviews(sql, settings.timezone);
+  await suppressDuplicateMessages(sql, settings.timezone);
+  for (let i = 0; i < 3; i++) {
+    const [row] = await claimNotification(sql, settings.timezone);
+    if (!row) break;
     let sent = false;
     try {
       const adapter = createiMessageAdapter({

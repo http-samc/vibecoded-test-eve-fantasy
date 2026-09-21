@@ -90,6 +90,27 @@ export interface Snapshot {
   tradeSettings: unknown;
   faabRemaining?: number | null;
   accountOwnsTeam?: boolean;
+  tradeInbox?: TradeInbox;
+}
+export interface TradeOffer {
+  id: string;
+  direction: "incoming" | "outgoing";
+  status: string;
+  espnStatus: string;
+  counterpartyTeamId: number;
+  counterpartyName: string;
+  createdAt: string | null;
+  expiresAt: string | null;
+  give: { id: number; name: string }[];
+  receive: { id: number; name: string }[];
+}
+export interface TradeInbox {
+  status: "ok" | "error";
+  checkedAt: string;
+  error: string | null;
+  incoming: TradeOffer[];
+  outgoing: TradeOffer[];
+  history: TradeOffer[];
 }
 export interface Evidence {
   title: string;

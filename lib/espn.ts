@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { EspnCredentials, Settings, Snapshot, Player } from "./types";
+import { parseTradeInbox, tradeInboxError } from "./trades";
 
 const footballSlots: Record<number, string> = {
   0: "QB",
@@ -303,7 +304,7 @@ export async function fetchSnapshot(
   const league = await fetchLeague(s, c);
   const team = league.teams.find((t) => t.id === s.teamId);
   if (!team) throw new Error("The selected team is not in this league.");
-  const [proResult, freeResult] = await Promise.allSettled([
+  const [proResult, freeResult, tradeResult] = await Promise.allSettled([
     espnRequest(`${seasonBase(s)}?view=proTeamSchedules_wl`, c).then(
       (d) => proSchema.parse(d).settings.proTeams,
     ),
@@ -322,6 +323,7 @@ export async function fetchSnapshot(
         },
       },
     ).then((d) => z.object({ players: z.array(entrySchema) }).parse(d).players),
+    fetchTradeActivity(s, c),
   ]);
   const pros = proResult.status === "fulfilled" ? proResult.value : [];
   const matchupPeriod =
@@ -353,7 +355,7 @@ export async function fetchSnapshot(
   standings.forEach((t, i) => {
     if (!t.rank) t.rank = i + 1;
   });
-  return {
+  const snapshot: Snapshot = {
     id: randomUUID(),
     fetchedAt: new Date().toISOString(),
     leagueId: s.leagueId,
@@ -411,4 +413,39 @@ export async function fetchSnapshot(
         : null;
     })(),
   };
+  try {
+    snapshot.tradeInbox =
+      tradeResult.status === "fulfilled"
+        ? parseTradeInbox(tradeResult.value, snapshot)
+        : tradeInboxError(
+            "ESPN's trade inbox could not be fetched. Incoming offers are unknown, not empty.",
+          );
+  } catch {
+    snapshot.tradeInbox = tradeInboxError(
+      "ESPN returned an unexpected trade format. Incoming offers are unknown, not empty.",
+    );
+  }
+  return snapshot;
+}
+export function fetchTradeActivity(s: Settings, c: EspnCredentials) {
+  return espnRequest(
+    `${seasonBase(s)}/segments/0/leagues/${s.leagueId}?view=mTransactions2`,
+    c,
+    {
+      headers: {
+        "x-fantasy-filter": JSON.stringify({
+          transactions: {
+            filterType: {
+              value: [
+                "TRADE_PROPOSAL",
+                "TRADE_ACCEPT",
+                "TRADE_DECLINE",
+                "TRADE_VETO",
+              ],
+            },
+          },
+        }),
+      },
+    },
+  );
 }

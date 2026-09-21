@@ -1,5 +1,15 @@
 # Verification — September 18, 2026
 
+## September 20 notification and trade-inbox audit
+
+- The cron registry contained one job. Recent cron requests belonged only to the active production deployment; no older-deployment cron traffic was found.
+- September 20 produced eight review texts: one daily, one waiver, six pregame. Each ledger entry had one attempt and a distinct provider message ID; no identical sent bodies were recorded.
+- Notification policy now emits one routine daily digest. Pregame, waiver, manual and conversational review summaries stay in Activity; distinct action, incoming-offer, and failure alerts remain separate. The sender suppresses same-day duplicate bodies and quiet-review messages from older runs.
+- A transaction-local temporary-table integration check verified the actual PostgreSQL claim queries, duplicate suppression, quiet-review suppression, and no retry of uncertain deliveries. No user records or messages were changed by that check.
+- ESPN trade activity contained three received proposals and their separate cancellation records. The new live inbox and production Eve tool correctly reported zero active incoming offers and three canceled historical offers. The dashboard displayed the same results.
+- The production dispatcher returned HTTP 200 without increasing the sent-message count. Autopilot and all existing action modes remained enabled.
+- 34 tests, TypeScript, and production build passed. Incoming offer visibility and evaluation are now supported; accepting/declining incoming offers is still not implemented.
+
 Production: https://eve-fantasy.vercel.app
 
 Vercel scope/project: `httpsamcs-projects/eve-fantasy`.

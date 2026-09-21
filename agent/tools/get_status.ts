@@ -4,7 +4,7 @@ import { dashboardData } from "../../lib/db";
 export function createStatusTool(loadStatus = dashboardData) {
   return defineTool({
     description:
-      "Get league standing, latest snapshot, recorded decisions, connection health and current policy. Data is timestamped and may be stale.",
+      "Get league standing, latest snapshot, recorded decisions, cached trade inbox, connection health and current policy. Data is timestamped and may be stale. Use get_trade_offers for a live ESPN trade inbox check; the actions list is only app-created actions.",
     inputSchema: z.object({}),
     async execute() {
       const data = await loadStatus();

@@ -78,18 +78,26 @@ export async function dashboardData() {
     deliveries,
     usage,
     health,
+    inboxRows,
   ] = await Promise.all([
     getSettings(),
     latestSnapshot(),
     db()`SELECT * FROM reviews ORDER BY started_at DESC LIMIT 20`,
     db()`SELECT * FROM actions ORDER BY created_at DESC LIMIT 40`,
     db()`SELECT key FROM app_settings WHERE key='espn_credentials'`,
-    db()`SELECT id,status,created_at,last_error FROM notification_outbox ORDER BY created_at DESC LIMIT 5`,
+    db()`SELECT id,status,created_at,last_error FROM notification_outbox WHERE status<>'suppressed' ORDER BY created_at DESC LIMIT 5`,
     db()`SELECT COALESCE(sum(cost),0) AS total FROM model_usage WHERE created_at >= date_trunc('month',now())`,
     db()`SELECT value FROM app_settings WHERE key='gateway_health'`,
+    db()`SELECT value FROM app_settings WHERE key='trade_inbox'`,
   ]);
   return {
     settings,
+    tradeInbox:
+      inboxRows[0]?.value?.leagueId === settings.leagueId &&
+      inboxRows[0]?.value?.teamId === settings.teamId &&
+      inboxRows[0]?.value?.season === settings.season
+        ? (inboxRows[0].value.inbox as import("./types").TradeInbox)
+        : (snapshot?.tradeInbox ?? null),
     snapshot,
     reviews: reviews as Review[],
     actions: actions as Action[],

@@ -14,6 +14,8 @@ import { deliverNotifications } from "./notifications";
 import type { Snapshot, Settings, Proposal } from "./types";
 import { proposedStatus } from "./policy";
 import { executeReadyActions } from "./autopilot";
+import { reviewNotificationStatus } from "./notification-policy";
+import { cacheTradeInbox } from "./trade-inbox";
 
 export const evidenceSchema = z.object({
   title: z.string().max(180),
@@ -134,6 +136,8 @@ export async function prepareReview(id: string, sessionId: string) {
   } else {
     snapshot = await fetchSnapshot(settings, credentials);
     await saveSnapshot(snapshot);
+    if (snapshot.tradeInbox)
+      await cacheTradeInbox(settings, snapshot.tradeInbox);
     await db()`UPDATE reviews SET snapshot_id=${snapshot.id} WHERE id=${id}`;
   }
   const pendingActions =
@@ -155,6 +159,8 @@ export async function prepareReview(id: string, sessionId: string) {
       "ESPN projections are the current numerical baseline. No independent paid projection feed is configured.",
       "Missing game times lock players conservatively. Missing projections prevent automatic optimization.",
       "Automatic mode submits eligible actions without owner approval; approve mode waits for the owner; observe mode records ideas only. Do not duplicate pending claims or offers. Propose moves only when they improve the team.",
+      "Inspect snapshot.tradeInbox for real incoming ESPN offers. App pendingActions is a separate list. If the inbox errored, do not claim there are no offers. Assess every active incoming offer and explain the decision. Incoming acceptance/decline is not implemented; never claim to have accepted or declined one.",
+      "If acquisitionSettings.isUsingAcquisitionBudget is false, the league uses traditional waivers: maxWaiverBid=0 does NOT prohibit claims and ESPN minimumBid is irrelevant. Use a zero bid in your proposal; the executor sends null for non-FAAB claims.",
     ],
   };
 }
@@ -237,7 +243,7 @@ export async function finishReview(input: z.infer<typeof reportSchema>) {
 }
 export async function queueReviewDigests() {
   const reviews =
-    await db()`SELECT r.id,r.summary FROM reviews r WHERE r.status='completed'
+    await db()`SELECT r.id,r.summary,r.occurrence,r.trigger FROM reviews r WHERE r.status='completed'
     AND NOT EXISTS(SELECT 1 FROM actions a WHERE a.review_id=r.id AND a.status IN ('ready','executing'))
     AND NOT EXISTS(SELECT 1 FROM notification_outbox n WHERE n.operation_key='review:'||r.id::text)
     ORDER BY r.started_at LIMIT 10`;
@@ -250,7 +256,10 @@ export async function queueReviewDigests() {
           .join(", ")
       : "No changes needed.";
     const body = `Eve · Fantasy review\n\n${review.summary?.slice(0, 1300) ?? "Review complete."}\n\nMoves: ${outcomes}\n${appOrigin()}/activity`;
-    await db()`INSERT INTO notification_outbox(id,operation_key,body) VALUES (${randomUUID()},${`review:${review.id}`},${body}) ON CONFLICT DO NOTHING`;
+    const status = reviewNotificationStatus(
+      review as { id: string; occurrence: string; trigger: string },
+    );
+    await db()`INSERT INTO notification_outbox(id,operation_key,body,status) VALUES (${randomUUID()},${`review:${review.id}`},${body},${status}) ON CONFLICT DO NOTHING`;
   }
 }
 export function scheduledOccurrence(

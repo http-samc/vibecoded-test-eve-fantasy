@@ -646,6 +646,88 @@ export function Dashboard({
                   Edit policy <ArrowUpRight size={14} />
                 </Link>
               </div>
+              <section className="panel" style={{ marginBottom: 20 }}>
+                <header className="panel-heading">
+                  <div>
+                    <h2>ESPN trade inbox</h2>
+                    <p className="small muted">
+                      Incoming offers and their actual status, separate from
+                      Eve’s proposals.
+                    </p>
+                  </div>
+                  <button
+                    className="subtle"
+                    disabled={Boolean(busy)}
+                    onClick={() =>
+                      act("trade-inbox", () => post("/api/trade-inbox"))
+                    }
+                  >
+                    <RefreshCw size={14} />
+                    Refresh inbox
+                  </button>
+                </header>
+                {!data.tradeInbox ? (
+                  <div className="empty compact">
+                    <p>Refresh to check ESPN for received trade offers.</p>
+                  </div>
+                ) : data.tradeInbox.status === "error" ? (
+                  <div className="notice" role="alert">
+                    {data.tradeInbox.error}
+                  </div>
+                ) : (
+                  <div className="review-actions">
+                    {[
+                      ...data.tradeInbox.incoming,
+                      ...data.tradeInbox.outgoing,
+                      ...data.tradeInbox.history,
+                    ].length ? (
+                      [
+                        ...data.tradeInbox.incoming,
+                        ...data.tradeInbox.outgoing,
+                        ...data.tradeInbox.history,
+                      ].map((offer) => (
+                        <article className="action-card" key={offer.id}>
+                          <header>
+                            <span className="eyebrow">{offer.direction}</span>
+                            <Badge status={offer.status.toLowerCase()} />
+                          </header>
+                          <h3>
+                            {offer.direction === "incoming" ? "From" : "To"}{" "}
+                            {offer.counterpartyName}
+                          </h3>
+                          <ul className="transaction-terms">
+                            <li>
+                              Give: {offer.give.map((p) => p.name).join(", ")}
+                            </li>
+                            <li>
+                              Receive:{" "}
+                              {offer.receive.map((p) => p.name).join(", ")}
+                            </li>
+                          </ul>
+                          <p className="small muted">
+                            Received {date(offer.createdAt)}
+                            {offer.expiresAt
+                              ? ` · Expires ${date(offer.expiresAt)}`
+                              : ""}
+                          </p>
+                        </article>
+                      ))
+                    ) : (
+                      <p className="small muted">
+                        No trade offers returned by ESPN.
+                      </p>
+                    )}
+                  </div>
+                )}
+                {data.tradeInbox && (
+                  <footer className="panel-footer">
+                    Checked {date(data.tradeInbox.checkedAt)} ·{" "}
+                    {data.tradeInbox.status === "ok"
+                      ? `${data.tradeInbox.incoming.length} active incoming · ${data.tradeInbox.history.length} past offers`
+                      : "Inbox unavailable"}
+                  </footer>
+                )}
+              </section>
               {data.actions.filter((a) => a.proposal.kind !== "hold").length ? (
                 <div className="decision-grid">
                   {data.actions
@@ -1163,7 +1245,8 @@ function SettingsPanel({
           </label>
           <p className="small muted">
             US numbers can use 10 digits; include the country code elsewhere.
-            Receive daily summaries and move outcomes. Existing Oura incoming
+            Receive one daily digest, plus distinct move, incoming-trade, and
+            failure updates. Routine checks stay quiet. Existing Oura incoming
             routing is preserved; use this dashboard for fantasy replies and
             approvals.
           </p>

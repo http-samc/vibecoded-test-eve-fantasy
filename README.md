@@ -65,3 +65,11 @@ The paid model route initially returned `byok_requires_paid_credits`. An owner-a
 ## Full autopilot
 
 The owner authorized unattended management. Automatic proposals enter a durable `ready` queue; the review and recurring dispatcher both drain it, so a crash after review completion does not lose the move. Every executor rechecks current policy, ownership, roster state, and ESPN locks. Definitive 4xx rejections are recorded as failed; ambiguous outcomes are reconciled before another mutation. Exact pending offers and claims are deduplicated. Digests are queued after execution settles and include recorded outcomes. ESPN cookie expiry and exhausted AI credits can still need owner intervention.
+
+## Notification and trade-inbox behavior
+
+The five-minute dispatcher runs one active production schedule. Daily, pregame, and waiver reviews share durable occurrence keys, but only the daily scheduled review queues a routine text. Other review summaries remain in Activity. Distinct action outcomes, new incoming offers, and operational failures may produce additional texts. Identical messages for the same local day are suppressed; ambiguous sends are not retried. The sender also suppresses quiet-review messages queued by older workflow versions.
+
+ESPN trade activity is read through `mTransactions2` with trade filters. Both review snapshots and the live `get_trade_offers` tool include incoming, outgoing, and historical offers. Related cancellation/decline events and expiry override stale PENDING flags. An unavailable inbox is explicitly reported as unknown. The dispatcher checks for incoming offers and starts a deduplicated assessment run for a changed active inbox. Incoming accept/decline execution is still unsupported; seeing and evaluating an offer does not mean it has been accepted.
+
+Run `node --env-file=.env.local --import tsx scripts/check-notification-claims.ts` to test the actual send-claim SQL in transaction-local temporary tables. It never sends a message or changes application records.

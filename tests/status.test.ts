@@ -10,6 +10,7 @@ test("get_status returns strict JSON with database dates and a private recipient
   const fixture = {
     settings: { ...defaultSettings, photonRecipient: "+14155550123" },
     snapshot: null,
+    tradeInbox: null,
     connected: true,
     photonConfigured: true,
     monthCost: 0.1,
@@ -71,6 +72,7 @@ test("get_status is JSON-safe before a first review and still omits the recipien
   const tool = createStatusTool(async () => ({
     settings: { ...defaultSettings },
     snapshot: null,
+    tradeInbox: null,
     reviews: [],
     actions: [],
     deliveries: [],
