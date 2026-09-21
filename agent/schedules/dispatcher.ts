@@ -46,7 +46,7 @@ export default defineSchedule({
             : /ESPN|cookies|authorize/i.test(message)
               ? "ESPN connection needs attention. Refresh your session in Settings."
               : "A scheduled check could not complete. The next scheduled check will retry.";
-          await db()`INSERT INTO notification_outbox(id,operation_key,body) VALUES (${randomUUID()},${`dispatcher:${new Date().toISOString().slice(0, 10)}:${category}`},${`Eve · ${category}`}) ON CONFLICT DO NOTHING`;
+          await db()`INSERT INTO notification_outbox(id,operation_key,body) VALUES (${randomUUID()},${`dispatcher:${new Date().toISOString().slice(0, 10)}:${category}`},${`Eve: ${category}`}) ON CONFLICT DO NOTHING`;
         } finally {
           await deliverNotifications();
         }

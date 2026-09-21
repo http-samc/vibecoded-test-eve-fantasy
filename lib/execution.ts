@@ -1,3 +1,4 @@
+import { formatActionMessage } from "./messages";
 import { randomUUID } from "node:crypto";
 import { db, getSettings, getCredentials, saveSnapshot } from "./db";
 import {
@@ -109,7 +110,7 @@ export async function executeLineupAction(id: string, ownerApproved: boolean) {
     const sql = db();
     await sql.transaction([
       sql`UPDATE actions SET status=${status},result=${message} WHERE id=${id}`,
-      sql`INSERT INTO notification_outbox (id,operation_key,body) VALUES (${randomUUID()},${`action:${id}`},${`Eve · ${message}`}) ON CONFLICT DO NOTHING`,
+      sql`INSERT INTO notification_outbox (id,operation_key,body) VALUES (${randomUUID()},${`action:${id}`},${formatActionMessage(proposal, status, message)}) ON CONFLICT DO NOTHING`,
     ]);
     return { status, message };
   } catch (error) {
@@ -124,7 +125,7 @@ export async function executeLineupAction(id: string, ownerApproved: boolean) {
     const sql = db();
     await sql.transaction([
       sql`UPDATE actions SET status=${uncertain ? "unknown" : "failed"},result=${message} WHERE id=${id}`,
-      sql`INSERT INTO notification_outbox(id,operation_key,body) VALUES (${randomUUID()},${`action:${id}`},${`Eve · ${proposal.title}: ${message}`}) ON CONFLICT DO NOTHING`,
+      sql`INSERT INTO notification_outbox(id,operation_key,body) VALUES (${randomUUID()},${`action:${id}`},${formatActionMessage(proposal, uncertain ? "unknown" : "failed", message)}) ON CONFLICT DO NOTHING`,
     ]);
     throw new Error(message);
   }

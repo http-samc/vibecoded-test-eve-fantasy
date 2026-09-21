@@ -2,11 +2,13 @@
 
 Private ESPN fantasy dashboard and manager, deployed to [eve-fantasy.vercel.app](https://eve-fantasy.vercel.app) in `httpsamcs-projects`. Eve runs on Vercel Workflow; its dispatcher is a Vercel Cron job every five minutes. Model calls and provider web search use AI Gateway. PostgreSQL stores snapshots, actions, and notification delivery records.
 
+Current deployment note: the separate Photon project is configured, but its provider rejects the registered recipient. Trade management and web chat work; text delivery and replies still need verification. See [VERIFICATION.md](VERIFICATION.md).
+
 ## Connect your team
 
 1. Open the site and enter the owner access code from `.local/access-code.txt` on the setup computer. This file is ignored by Git and excluded from deployments.
 2. In Settings, supply the sport, season, league URL, and ESPN `espn_s2`/`SWID` cookies. If the URL does not identify your team, the form lists the league's teams after verification.
-3. Save the phone number already registered with the shared `photon/oura-rivals` connector and send a test text. Only outgoing fantasy messages use this connector; existing Oura webhook routing is unchanged.
+3. Save your phone number registered with `photon/eve-fantasy` and send a test text. Eve uses its own Photon project for outgoing texts and owner-only direct replies; Oura keeps its separate connector and routing.
 4. Ensure AI Gateway credits are available, choose Full autopilot to enable scheduled reviews and automatic execution, or choose individual action modes.
 
 Cookies are encrypted with AES-256-GCM in Postgres. The encryption key, owner authentication secrets, and service token live in Vercel environment variables. Secrets never enter model context. The owner session is signed, expires in seven days, and uses an HTTP-only SameSite cookie. The browser and Eve APIs both require authentication.
@@ -18,7 +20,7 @@ Cookies are encrypted with AES-256-GCM in Postgres. The encryption key, owner au
 - Daily review scheduling in the configured timezone plus 60- and 15-minute pregame windows, when game times are available. A run key and database uniqueness prevent overlapping team reviews.
 - Eve chat, pause/resume, per-action policy settings, review activity, and a durable Photon outbox.
 - A guarded football lineup transaction adapter with fresh-state checks and ESPN read-back. A real lineup adjustment has been verified against the connected league. Production execution is enabled by `ESPN_LINEUP_WRITES_ENABLED=true`; previews stay disabled.
-- Football free-agent adds, waiver claims, and equal-count trade offers in observe, approve, or automatic mode, with exact visible player terms, protected-player and FAAB checks, transaction receipts, and background reconciliation. Production capabilities use `ESPN_WAIVER_WRITES_ENABLED` and `ESPN_TRADE_WRITES_ENABLED`. Full autopilot is standing authorization to submit eligible actions; individual approvals are required only in approve mode. Incoming trade acceptance and unequal-count trades are not supported. A submitted offer or claim is never reported as a completed roster change.
+- Football free-agent adds, waiver claims, and equal-count trade offers in observe, approve, or automatic mode, with exact visible player terms, protected-player and FAAB checks, transaction receipts, and background reconciliation. Production capabilities use `ESPN_WAIVER_WRITES_ENABLED` and `ESPN_TRADE_WRITES_ENABLED`. Full autopilot is standing authorization to submit eligible actions; individual approvals are required only in approve mode. Incoming trade acceptance and decline follow the trade policy. Acceptance supports unequal player counts with exactly the necessary roster drops; fresh offer terms, expiry, ownership, locks, and protected players are checked before sending. A submitted offer or claim is never reported as a completed roster change.
 
 ESPN is an unofficial cookie-authenticated integration. Missing game times conservatively lock players; missing projections cause the optimizer to hold. NBA reads are supported by the common adapter but scoring-category strategy and NBA writes are not enabled. ESPN is the only structured projection source currently configured. Research may corroborate or challenge it, but does not fabricate replacement projections.
 
@@ -70,6 +72,8 @@ The owner authorized unattended management. Automatic proposals enter a durable 
 
 The five-minute dispatcher runs one active production schedule. Daily, pregame, and waiver reviews share durable occurrence keys, but only the daily scheduled review queues a routine text. Other review summaries remain in Activity. Distinct action outcomes, new incoming offers, and operational failures may produce additional texts. Identical messages for the same local day are suppressed; ambiguous sends are not retried. The sender also suppresses quiet-review messages queued by older workflow versions.
 
-ESPN trade activity is read through `mTransactions2` with trade filters. Both review snapshots and the live `get_trade_offers` tool include incoming, outgoing, and historical offers. Related cancellation/decline events and expiry override stale PENDING flags. An unavailable inbox is explicitly reported as unknown. The dispatcher checks for incoming offers and starts a deduplicated assessment run for a changed active inbox. Incoming accept/decline execution is still unsupported; seeing and evaluating an offer does not mean it has been accepted.
+ESPN trade activity is read through `mTransactions2` with trade filters. Both review snapshots and the live `get_trade_offers` tool include incoming, outgoing, and historical offers. Related cancellation/decline events and expiry override stale PENDING flags. An unavailable inbox is explicitly reported as unknown. The dispatcher checks for incoming offers and starts a deduplicated assessment run for a changed active inbox. Every review records an accept, decline, or hold decision for each active incoming offer. Automatic mode sends eligible replies without asking again. An acceptance remains submitted until ESPN completes the trade and the resulting roster is verified. Failed or canceled receipts cannot prove a successful reply.
+
+Messages use ASD-STE100-inspired simple English: a lead of at most 280 characters, up to three short bullets, and up to two links to sources used. This is a writing preference, not formal certification.
 
 Run `node --env-file=.env.local --import tsx scripts/check-notification-claims.ts` to test the actual send-claim SQL in transaction-local temporary tables. It never sends a message or changes application records.

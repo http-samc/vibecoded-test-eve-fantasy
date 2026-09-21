@@ -20,8 +20,8 @@ const transaction = z
       .array(
         z.object({
           playerId: z.number(),
-          fromTeamId: z.number(),
-          toTeamId: z.number(),
+          fromTeamId: z.number().optional(),
+          toTeamId: z.number().optional(),
           type: z.string(),
         }),
       )
@@ -60,14 +60,34 @@ export function parseTradeInbox(
   );
   const teams = new Map(context.standings.map((t) => [t.id, t.name]));
   const related = new Map<string, Transaction>();
+  const ownerReplies = new Map<string, "accept" | "decline">();
   for (const t of [...data.transactions].sort(
     (a, b) =>
       (a.processDate ?? a.proposedDate ?? 0) -
       (b.processDate ?? b.proposedDate ?? 0),
   )) {
+    const succeeded =
+      t.executionType !== "CANCEL" &&
+      (t.status === "EXECUTED" ||
+        (t.type === "TRADE_ACCEPT" &&
+          t.executionType === "EXECUTE" &&
+          !t.status));
+    if (
+      t.relatedTransactionId != null &&
+      t.teamId === own &&
+      succeeded &&
+      ["TRADE_ACCEPT", "TRADE_DECLINE"].includes(t.type)
+    )
+      ownerReplies.set(
+        String(t.relatedTransactionId),
+        t.type === "TRADE_ACCEPT" ? "accept" : "decline",
+      );
     if (
       t.relatedTransactionId != null &&
       (t.status === "EXECUTED" ||
+        (t.type === "TRADE_ACCEPT" &&
+          t.executionType === "EXECUTE" &&
+          !t.status) ||
         ["CANCELED", "CANCELLED"].includes(t.status ?? ""))
     )
       related.set(String(t.relatedTransactionId), t);
@@ -84,15 +104,24 @@ export function parseTradeInbox(
     const espnStatus = t.status ?? "UNKNOWN";
     let status = espnStatus;
     const event = related.get(t.id);
-    if (
-      event?.executionType === "CANCEL" ||
-      ["CANCELED", "CANCELLED"].includes(event?.status ?? "")
-    )
-      status = "CANCELED";
-    else if (event?.type === "TRADE_DECLINE") status = "DECLINED";
-    else if (event?.type === "TRADE_VETO") status = "VETOED";
-    else if (event?.type === "TRADE_ACCEPT" && event.teamId === own)
-      status = "ACCEPTED";
+    const ownerAction = t.teamActions?.[String(own)];
+    const ownerResponse =
+      ownerAction === "ACCEPTED"
+        ? "accept"
+        : ["DECLINED", "REJECTED"].includes(ownerAction ?? "")
+          ? "decline"
+          : (ownerReplies.get(t.id) ?? null);
+    if (status !== "EXECUTED") {
+      if (
+        event?.executionType === "CANCEL" ||
+        ["CANCELED", "CANCELLED"].includes(event?.status ?? "")
+      )
+        status = "CANCELED";
+      else if (event?.type === "TRADE_DECLINE") status = "DECLINED";
+      else if (event?.type === "TRADE_VETO") status = "VETOED";
+      else if (event?.type === "TRADE_ACCEPT" && event.teamId === own)
+        status = "ACCEPTED";
+    }
     if (["PENDING", "PROPOSED"].includes(status)) {
       const ownerAction = t.teamActions?.[String(own)];
       if (ownerAction === "ACCEPTED") status = "ACCEPTED";
@@ -106,9 +135,10 @@ export function parseTradeInbox(
     const counterparty =
       t.teamId !== own
         ? t.teamId
-        : (t.items.find((i) => i.fromTeamId !== own && i.fromTeamId > 0)
+        : (t.items.find((i) => i.fromTeamId !== own && (i.fromTeamId ?? 0) > 0)
             ?.fromTeamId ??
-          t.items.find((i) => i.toTeamId !== own && i.toTeamId > 0)?.toTeamId ??
+          t.items.find((i) => i.toTeamId !== own && (i.toTeamId ?? 0) > 0)
+            ?.toTeamId ??
           0);
     const give = t.items
       .filter((i) => i.type === "TRADE" && i.fromTeamId === own)
@@ -133,6 +163,7 @@ export function parseTradeInbox(
       expiresAt,
       give,
       receive,
+      ownerResponse,
     });
   }
   const unique = [...new Map(offers.map((t) => [t.id, t])).values()].sort(

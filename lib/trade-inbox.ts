@@ -3,6 +3,7 @@ import { db, getSettings, getCredentials, latestSnapshot } from "./db";
 import { fetchTradeActivity } from "./espn";
 import { parseTradeInbox, tradeInboxError } from "./trades";
 import type { Settings, TradeInbox } from "./types";
+import { formatTradeNotice } from "./messages";
 
 export async function readTradeInbox(): Promise<TradeInbox> {
   const [settings, credentials, snapshot] = await Promise.all([
@@ -56,7 +57,7 @@ export async function pollTradeInbox(settings: Settings) {
   if (inbox.status !== "ok" || !inbox.incoming.length) return null;
   const scope = `${settings.leagueId}:${settings.season}:${settings.teamId}`;
   for (const offer of inbox.incoming) {
-    const body = `Eve · New incoming trade from ${offer.counterpartyName}\nGive: ${offer.give.map((p) => p.name).join(", ")}\nReceive: ${offer.receive.map((p) => p.name).join(", ")}\n${offer.expiresAt ? `Expires ${new Date(offer.expiresAt).toLocaleString("en-US", { timeZone: settings.timezone })} ${settings.timezone}.\n` : ""}I can assess this offer. Incoming acceptance/decline is not implemented; this is not an executed trade.`;
+    const body = formatTradeNotice(offer, settings.timezone);
     await db()`INSERT INTO notification_outbox(id,operation_key,body) VALUES (${randomUUID()},${`incoming-trade:${scope}:${offer.id}`},${body}) ON CONFLICT DO NOTHING`;
   }
   const fingerprint = createHash("sha256")

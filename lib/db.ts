@@ -9,6 +9,7 @@ import {
   type Action,
 } from "./types";
 import { seal, unseal } from "./crypto";
+import { formatUpdate } from "./messages";
 export function db() {
   if (!process.env.DATABASE_URL) throw new Error("Database is not configured.");
   return neon(process.env.DATABASE_URL);
@@ -63,7 +64,7 @@ export async function claimReview(trigger: string, occurrence: string) {
 export async function failReview(id: string, message: string) {
   const sql = db();
   await sql.transaction([
-    sql`INSERT INTO notification_outbox(id,operation_key,body) SELECT ${randomUUID()},${`review-failed:${id}`},${`Eve · Fantasy review needs attention. ${message}`}
+    sql`INSERT INTO notification_outbox(id,operation_key,body) SELECT ${randomUUID()},${`review-failed:${id}`},${formatUpdate({ summary: "I could not finish the team review.", bullets: [message] })}
       WHERE EXISTS(SELECT 1 FROM reviews WHERE id=${id} AND status IN ('queued','running')) ON CONFLICT DO NOTHING`,
     sql`UPDATE reviews SET status='failed', error=${message}, completed_at=now() WHERE id=${id} AND status IN ('queued','running')`,
   ]);

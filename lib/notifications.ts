@@ -1,6 +1,7 @@
 import { createiMessageAdapter } from "@photon-ai/chat-adapter-imessage";
 import { connectPhotonCredentials } from "@vercel/connect/eve";
 import { db, getSettings } from "./db";
+import { photonFailure } from "./photon-failure";
 import {
   suppressQuietReviews,
   suppressDuplicateMessages,
@@ -26,9 +27,10 @@ export async function deliverNotifications() {
       sent = true;
       const result = await adapter.postMessage(thread, { raw: row.body });
       await db()`UPDATE notification_outbox SET status='sent',provider_id=${result.id},lease_until=null,last_error=null WHERE id=${row.id}`;
-    } catch {
-      await db()`UPDATE notification_outbox SET status=${sent ? "unknown" : Number(row.attempts) >= 3 ? "failed" : "pending"},lease_until=null,retry_at=now()+interval '10 minutes',
-        last_error=${sent ? "Photon delivery could not be confirmed. Check your conversation before resending." : "Photon connection failed. Check the connector and recipient registration."} WHERE id=${row.id}`;
+    } catch (error) {
+      const failure = photonFailure(error, sent, Number(row.attempts));
+      await db()`UPDATE notification_outbox SET status=${failure.status},lease_until=null,retry_at=now()+interval '10 minutes',
+        last_error=${failure.message} WHERE id=${row.id}`;
     }
   }
 }

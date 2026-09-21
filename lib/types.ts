@@ -103,6 +103,7 @@ export interface TradeOffer {
   expiresAt: string | null;
   give: { id: number; name: string }[];
   receive: { id: number; name: string }[];
+  ownerResponse?: "accept" | "decline" | null;
 }
 export interface TradeInbox {
   status: "ok" | "error";
@@ -118,12 +119,15 @@ export interface Evidence {
   note: string;
 }
 export interface Proposal {
-  kind: "lineup" | "waiver" | "trade" | "hold";
+  kind: "lineup" | "waiver" | "trade" | "trade_response" | "hold";
   title: string;
   rationale: string;
   expectedGain: number | null;
   playerIds: number[];
   targetTeamId?: number;
+  offerId?: string;
+  tradeResponse?: "accept" | "decline";
+  dropPlayerIds?: number[];
   bid?: number;
   addPlayerId?: number;
   dropPlayerId?: number;

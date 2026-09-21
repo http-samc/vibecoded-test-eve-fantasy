@@ -1,3 +1,4 @@
+import { formatActionMessage } from "./messages";
 import { randomUUID } from "node:crypto";
 import { db, getCredentials, getSettings } from "./db";
 import {
@@ -6,6 +7,11 @@ import {
   seasonBase,
   EspnRequestError,
 } from "./espn";
+import {
+  validateTradeResponse,
+  tradeResponsePayload,
+  tradeResponseOutcome,
+} from "./trade-responses";
 import { requireActionPermission, transactionIdentity } from "./policy";
 import type { Proposal, Settings, Snapshot } from "./types";
 
@@ -25,6 +31,12 @@ export function validateTransaction(
     throw new Error("The connected team changed.");
   if (now - new Date(snapshot.fetchedAt).getTime() > 120000)
     throw new Error("The roster is stale.");
+  if (proposal.kind === "trade_response") {
+    if (settings.tradeMode === "observe")
+      throw new Error("Current policy allows trade ideas only.");
+    validateTradeResponse(proposal, snapshot, settings, now);
+    return true;
+  }
   const owned = (id: number) => snapshot.roster.find((p) => p.id === id);
   const protectedPlayer = (id: number) =>
     settings.protectedPlayers.some(
@@ -125,6 +137,8 @@ export function transactionPayload(
     Math.floor((Date.now() + 2 * 86400000) / 1000) * 1000,
   ).toISOString(),
 ) {
+  if (proposal.kind === "trade_response")
+    return tradeResponsePayload(proposal, snapshot, swid);
   const base = {
     isLeagueManager: false,
     teamId: snapshot.teamId,
@@ -197,7 +211,7 @@ export async function executeTransactionAction(
   if (!action) throw new Error("This action does not exist.");
   const proposal = action.proposal as Proposal;
   const flag =
-    proposal.kind === "trade"
+    proposal.kind === "trade" || proposal.kind === "trade_response"
       ? "ESPN_TRADE_WRITES_ENABLED"
       : "ESPN_WAIVER_WRITES_ENABLED";
   if (
@@ -217,10 +231,13 @@ export async function executeTransactionAction(
       "The previous ESPN result is uncertain. Reconcile it before submitting another transaction.",
     );
   const existing =
-    await db()`SELECT a.proposal FROM actions a JOIN reviews r ON r.id=a.review_id JOIN snapshots s ON s.id=r.snapshot_id WHERE a.id<>${id} AND a.status IN ('submitted','executing') AND s.data->>'leagueId'=${settings.leagueId} AND (s.data->>'teamId')::int=${settings.teamId}`;
+    await db()`SELECT a.proposal FROM actions a JOIN reviews r ON r.id=a.review_id JOIN snapshots s ON s.id=r.snapshot_id WHERE a.id<>${id} AND (a.status IN ('submitted','executing') OR (a.status='verified' AND a.proposal->>'kind'='trade_response')) AND s.data->>'leagueId'=${settings.leagueId} AND (s.data->>'teamId')::int=${settings.teamId} AND (s.data->>'season')::int=${settings.season}`;
   if (
-    existing.some(
-      (a) => transactionIdentity(a.proposal) === transactionIdentity(proposal),
+    existing.some((a) =>
+      proposal.kind === "trade_response"
+        ? a.proposal.kind === "trade_response" &&
+          a.proposal.offerId === proposal.offerId
+        : transactionIdentity(a.proposal) === transactionIdentity(proposal),
     )
   ) {
     await db()`UPDATE actions SET status='rejected',result='An identical transaction is already pending on ESPN.' WHERE id=${id} AND status IN ('ready','proposed','awaiting_approval')`;
@@ -282,18 +299,28 @@ export async function executeTransactionAction(
       },
     )) as { id?: string | number; status?: string } | null;
     const externalId = response?.id != null ? String(response.id) : null;
+    if (externalId)
+      await db()`UPDATE actions SET external_id=${externalId} WHERE id=${id}`;
     const accepted = Boolean(
       externalId &&
       ["PENDING", "EXECUTED", "PROPOSED"].includes(response?.status ?? ""),
     );
-    const status = accepted ? "submitted" : "unknown";
-    const message = accepted
+    let status = accepted ? "submitted" : "unknown";
+    let message = accepted
       ? `ESPN accepted ${proposal.kind === "trade" ? "trade offer" : "waiver claim"} ${externalId}. It is submitted, not a confirmed roster change.`
       : "ESPN did not return a recognizable transaction receipt. Check ESPN; no automatic retry will occur.";
+    if (proposal.kind === "trade_response") {
+      const after = await fetchSnapshot(settings, credentials);
+      const outcome = tradeResponseOutcome(proposal, after);
+      status = outcome?.status ?? "unknown";
+      message =
+        outcome?.message ??
+        "I cannot confirm the reply yet. I will check ESPN before I try again.";
+    }
     const sql = db();
     await sql.transaction([
       sql`UPDATE actions SET status=${status},external_id=${externalId},result=${message} WHERE id=${id}`,
-      sql`INSERT INTO notification_outbox(id,operation_key,body) VALUES (${randomUUID()},${`action:${id}`},${`Eve · ${message}`}) ON CONFLICT DO NOTHING`,
+      sql`INSERT INTO notification_outbox(id,operation_key,body) VALUES (${randomUUID()},${`action:${id}`},${formatActionMessage(proposal, status, message)}) ON CONFLICT DO NOTHING`,
     ]);
     return { status, message };
   } catch (error) {
@@ -308,7 +335,7 @@ export async function executeTransactionAction(
     const sql = db();
     await sql.transaction([
       sql`UPDATE actions SET status=${uncertain ? "unknown" : "failed"},result=${message} WHERE id=${id}`,
-      sql`INSERT INTO notification_outbox(id,operation_key,body) VALUES (${randomUUID()},${`action:${id}`},${`Eve · ${proposal.title}: ${message}`}) ON CONFLICT DO NOTHING`,
+      sql`INSERT INTO notification_outbox(id,operation_key,body) VALUES (${randomUUID()},${`action:${id}`},${formatActionMessage(proposal, uncertain ? "unknown" : "failed", message)}) ON CONFLICT DO NOTHING`,
     ]);
     throw new Error(message);
   }

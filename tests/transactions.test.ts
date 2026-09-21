@@ -71,6 +71,7 @@ test("trade direction is exact and ownership is independently checked", () => {
     "fixture",
     "2026-09-22T12:00:00.000Z",
   );
+  assert.ok("items" in payload);
   assert.deepEqual(payload.items, [
     { playerId: 1, type: "TRADE", fromTeamId: 1, toTeamId: 2 },
     { playerId: 3, type: "TRADE", fromTeamId: 2, toTeamId: 1 },
@@ -144,6 +145,7 @@ test("waivers reject over-budget bids, missing FAAB, protected drops and unavail
   );
   const payload = transactionPayload(waiver, snapshot, "fixture");
   assert.equal(payload.type, "WAIVER");
+  assert.ok("items" in payload);
   assert.deepEqual(payload.items, [
     { playerId: 4, type: "ADD", toTeamId: 1 },
     { playerId: 2, type: "DROP", fromTeamId: 1 },

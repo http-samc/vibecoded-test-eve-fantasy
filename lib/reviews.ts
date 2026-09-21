@@ -15,6 +15,8 @@ import type { Snapshot, Settings, Proposal } from "./types";
 import { proposedStatus } from "./policy";
 import { executeReadyActions } from "./autopilot";
 import { reviewNotificationStatus } from "./notification-policy";
+import { appOrigin } from "./site";
+import { formatReviewMessage } from "./messages";
 import { cacheTradeInbox } from "./trade-inbox";
 
 export const evidenceSchema = z.object({
@@ -28,7 +30,7 @@ export const evidenceSchema = z.object({
 export const proposalSchema = z.object({
   kind: z.enum(["waiver", "trade", "hold"]),
   title: z.string().max(160),
-  rationale: z.string().max(1800),
+  rationale: z.string().max(280),
   expectedGain: z.number().nullable(),
   playerIds: z.array(z.number().int()).max(8),
   targetTeamId: z.number().int().optional(),
@@ -65,19 +67,33 @@ export const proposalSchema = z.object({
 });
 export const reportSchema = z.object({
   reviewId: z.string().uuid(),
-  summary: z.string().min(10).max(3500),
+  summary: z.string().min(10).max(280),
+  details: z.array(z.string().max(160)).max(3).default([]),
   lineupRecommendation: z.enum(["use_optimizer", "hold"]),
-  lineupReason: z.string().max(1000),
+  lineupReason: z.string().max(280),
   proposals: z.array(proposalSchema).max(8),
+  tradeResponses: z
+    .array(
+      z.object({
+        offerId: z.string().min(1).max(100),
+        decision: z.enum(["accept", "decline", "hold"]),
+        rationale: z.string().max(280),
+        dropPlayerIds: z
+          .array(
+            z
+              .number()
+              .int()
+              .refine((id) => id !== 0),
+          )
+          .max(5)
+          .default([]),
+        sources: z.array(evidenceSchema).max(3).default([]),
+      }),
+    )
+    .max(10)
+    .default([]),
   evidence: z.array(evidenceSchema).max(12),
 });
-export function appOrigin() {
-  if (process.env.APP_URL) return process.env.APP_URL;
-  if (process.env.VERCEL_PROJECT_PRODUCTION_URL)
-    return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
-  if (!process.env.VERCEL) return "http://localhost:3000";
-  throw new Error("The application URL is not configured.");
-}
 export async function checkBudget() {
   const s = await getSettings();
   const rows =
@@ -159,7 +175,7 @@ export async function prepareReview(id: string, sessionId: string) {
       "ESPN projections are the current numerical baseline. No independent paid projection feed is configured.",
       "Missing game times lock players conservatively. Missing projections prevent automatic optimization.",
       "Automatic mode submits eligible actions without owner approval; approve mode waits for the owner; observe mode records ideas only. Do not duplicate pending claims or offers. Propose moves only when they improve the team.",
-      "Inspect snapshot.tradeInbox for real incoming ESPN offers. App pendingActions is a separate list. If the inbox errored, do not claim there are no offers. Assess every active incoming offer and explain the decision. Incoming acceptance/decline is not implemented; never claim to have accepted or declined one.",
+      "Inspect snapshot.tradeInbox for real incoming ESPN offers. App pendingActions is a separate list. If the inbox errored, do not claim there are no offers. Assess every active incoming offer and explain the decision. Use tradeResponses to record accept, decline, or hold for every active incoming offer. The trade policy controls execution. Include exactly the required roster drops for an acceptance that adds more players than it sends. Wait for the tool result before claiming any reply or roster change.",
       "If acquisitionSettings.isUsingAcquisitionBudget is false, the league uses traditional waivers: maxWaiverBid=0 does NOT prohibit claims and ESPN minimumBid is irrelevant. Use a zero bid in your proposal; the executor sends null for non-FAAB claims.",
     ],
   };
@@ -206,6 +222,58 @@ export async function finishReview(input: z.infer<typeof reportSchema>) {
             ]
           : [],
   }));
+  const activeOffers =
+    snapshot.tradeInbox?.status === "ok" ? snapshot.tradeInbox.incoming : [];
+  if (
+    new Set(input.tradeResponses.map((r) => r.offerId)).size !==
+    input.tradeResponses.length
+  )
+    throw new Error("The same incoming offer has more than one decision.");
+  for (const offer of activeOffers)
+    if (!input.tradeResponses.some((r) => r.offerId === offer.id))
+      throw new Error(
+        `Record an accept, decline, or hold decision for incoming offer ${offer.id}.`,
+      );
+  for (const response of input.tradeResponses) {
+    const offer = activeOffers.find((t) => t.id === response.offerId);
+    if (!offer)
+      throw new Error(
+        "The trade response does not match an active incoming offer.",
+      );
+    if (response.decision === "hold") {
+      if (response.dropPlayerIds.length)
+        throw new Error("A hold decision must not drop players.");
+      proposals.push({
+        kind: "hold",
+        title: `Wait on the offer from ${offer.counterpartyName}`,
+        rationale: response.rationale,
+        expectedGain: null,
+        playerIds: [],
+        sources: response.sources,
+      });
+    } else {
+      const drops = response.dropPlayerIds.map((id) => name(id));
+      proposals.push({
+        kind: "trade_response",
+        title: `${response.decision === "accept" ? "Accept" : "Decline"} the offer from ${offer.counterpartyName}`,
+        rationale: response.rationale,
+        offerId: offer.id,
+        tradeResponse: response.decision,
+        targetTeamId: offer.counterpartyTeamId,
+        givePlayerIds: offer.give.map((p) => p.id),
+        receivePlayerIds: offer.receive.map((p) => p.id),
+        dropPlayerIds: response.dropPlayerIds,
+        playerIds: [...offer.give, ...offer.receive].map((p) => p.id),
+        expectedGain: null,
+        sources: response.sources,
+        terms: [
+          `Give: ${offer.give.map((p) => p.name).join(", ")}`,
+          `Get: ${offer.receive.map((p) => p.name).join(", ")}`,
+          ...(drops.length ? [`Drop: ${drops.join(", ")}`] : []),
+        ],
+      });
+    }
+  }
   const optimized = optimizeLineup(snapshot);
   if (input.lineupRecommendation === "use_optimizer" && optimized)
     proposals.unshift({
@@ -232,7 +300,7 @@ export async function finishReview(input: z.infer<typeof reportSchema>) {
   });
   await sql.transaction([
     ...statements,
-    sql`UPDATE reviews SET status='completed',summary=${input.summary},evidence=${JSON.stringify(input.evidence)}::jsonb,completed_at=now() WHERE id=${input.reviewId} AND status='running'`,
+    sql`UPDATE reviews SET status='completed',summary=${[input.summary, ...input.details.map((p) => `- ${p}`)].join("\n\n")},evidence=${JSON.stringify(input.evidence)}::jsonb,completed_at=now() WHERE id=${input.reviewId} AND status='running'`,
   ]);
   await executeReadyActions(input.reviewId);
   await queueReviewDigests();
@@ -243,19 +311,18 @@ export async function finishReview(input: z.infer<typeof reportSchema>) {
 }
 export async function queueReviewDigests() {
   const reviews =
-    await db()`SELECT r.id,r.summary,r.occurrence,r.trigger FROM reviews r WHERE r.status='completed'
+    await db()`SELECT r.id,r.summary,r.evidence,r.occurrence,r.trigger FROM reviews r WHERE r.status='completed'
     AND NOT EXISTS(SELECT 1 FROM actions a WHERE a.review_id=r.id AND a.status IN ('ready','executing'))
     AND NOT EXISTS(SELECT 1 FROM notification_outbox n WHERE n.operation_key='review:'||r.id::text)
     ORDER BY r.started_at LIMIT 10`;
   for (const review of reviews) {
     const counts =
       await db()`SELECT status,count(*)::int AS count FROM actions WHERE review_id=${review.id} AND proposal->>'kind'<>'hold' GROUP BY status`;
-    const outcomes = counts.length
-      ? counts
-          .map((r) => `${r.count} ${r.status.replaceAll("_", " ")}`)
-          .join(", ")
-      : "No changes needed.";
-    const body = `Eve · Fantasy review\n\n${review.summary?.slice(0, 1300) ?? "Review complete."}\n\nMoves: ${outcomes}\n${appOrigin()}/activity`;
+    const body = formatReviewMessage(
+      review.summary ?? "Your team review is complete.",
+      review.evidence ?? [],
+      counts as { status: string; count: number }[],
+    );
     const status = reviewNotificationStatus(
       review as { id: string; occurrence: string; trigger: string },
     );

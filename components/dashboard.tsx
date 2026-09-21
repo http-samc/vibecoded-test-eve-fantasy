@@ -1092,7 +1092,7 @@ function SettingsPanel({
               </select>
             </label>
             <label>
-              Trade offers
+              Trade offers and replies
               <select
                 value={form.tradeMode}
                 onChange={(e) =>
@@ -1227,7 +1227,8 @@ function SettingsPanel({
             <div>
               <h2>Texts through Photon</h2>
               <p className="small muted">
-                Using your existing Oura Photon connector.
+                Eve has its own Photon number. Reply to its texts to talk about
+                your team.
               </p>
             </div>
             <MessageSquare size={20} />

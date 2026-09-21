@@ -107,3 +107,55 @@ test("unrelated transactions and outgoing trades are not mistaken for incoming o
   assert.equal(inbox.outgoing.length, 1);
   assert.throws(() => parseTradeInbox({ unexpected: "schema" }, context, now));
 });
+
+test("accept receipts without status and with DROP items are read as accepted, not completed", () => {
+  const receipt = {
+    id: "reply",
+    type: "TRADE_ACCEPT",
+    executionType: "EXECUTE",
+    teamId: 1,
+    relatedTransactionId: offer.id,
+    items: [{ playerId: 33, fromTeamId: 1, type: "DROP" }],
+  };
+  const inbox = parseTradeInbox(
+    { transactions: [offer, receipt] },
+    context,
+    now,
+  );
+  assert.equal(inbox.history[0].status, "ACCEPTED");
+  assert.equal(inbox.history[0].ownerResponse, "accept");
+  const completed = parseTradeInbox(
+    { transactions: [{ ...offer, status: "EXECUTED" }, receipt] },
+    context,
+    now,
+  );
+  assert.equal(completed.history[0].status, "EXECUTED");
+});
+
+test("failed or canceled reply records do not prove an owner reply succeeded", () => {
+  for (const type of ["TRADE_ACCEPT", "TRADE_DECLINE"]) {
+    for (const status of ["FAILED", "CANCELED"]) {
+      const inbox = parseTradeInbox(
+        {
+          transactions: [
+            offer,
+            {
+              id: "reply",
+              type,
+              executionType: "EXECUTE",
+              status,
+              teamId: 1,
+              relatedTransactionId: offer.id,
+            },
+          ],
+        },
+        context,
+        now,
+      );
+      assert.equal(
+        [...inbox.incoming, ...inbox.history][0].ownerResponse,
+        null,
+      );
+    }
+  }
+});

@@ -4,7 +4,7 @@ export function actionMode(proposal: Proposal, settings: Settings) {
     ? settings.lineupMode
     : proposal.kind === "waiver"
       ? settings.waiverMode
-      : proposal.kind === "trade"
+      : proposal.kind === "trade" || proposal.kind === "trade_response"
         ? settings.tradeMode
         : "observe";
 }
@@ -34,6 +34,9 @@ export function requireActionPermission(
 export function transactionIdentity(proposal: Proposal) {
   return JSON.stringify({
     kind: proposal.kind,
+    offerId: proposal.offerId ?? null,
+    response: proposal.tradeResponse ?? null,
+    drops: [...(proposal.dropPlayerIds ?? [])].sort((a, b) => a - b),
     target: proposal.targetTeamId ?? null,
     add: proposal.addPlayerId ?? null,
     drop: proposal.dropPlayerId ?? null,

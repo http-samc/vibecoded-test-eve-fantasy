@@ -1,14 +1,16 @@
+import { formatActionMessage } from "./messages";
 import { randomUUID } from "node:crypto";
 import { db, getSettings, getCredentials, saveSnapshot } from "./db";
 import { espnRequest, fetchSnapshot, seasonBase } from "./espn";
 import type { Proposal } from "./types";
 import { describeLineupChange } from "./lineup";
+import { tradeResponseOutcome } from "./trade-responses";
 export async function reconcileActions() {
   const sql = db();
   const interrupted =
     await sql`UPDATE actions SET status='unknown',result='Execution was interrupted. ESPN must be checked before any retry.' WHERE status='executing' AND execution_started_at<now()-interval '3 minutes' RETURNING id`;
   for (const a of interrupted)
-    await sql`INSERT INTO notification_outbox(id,operation_key,body) VALUES (${randomUUID()},${`interrupted:${a.id}`},'Eve · An ESPN action was interrupted. I will reconcile it before considering another change.') ON CONFLICT DO NOTHING`;
+    await sql`INSERT INTO notification_outbox(id,operation_key,body) VALUES (${randomUUID()},${`interrupted:${a.id}`},'Eve: A move stopped before I could confirm it. I will check ESPN before I make another move.') ON CONFLICT DO NOTHING`;
   const actions =
     await sql`SELECT a.*,s.data AS original FROM actions a JOIN reviews r ON r.id=a.review_id JOIN snapshots s ON s.id=r.snapshot_id WHERE a.status IN ('submitted','unknown') ORDER BY a.created_at LIMIT 10`;
   if (!actions.length) return;
@@ -42,7 +44,13 @@ export async function reconcileActions() {
     const proposal = action.proposal as Proposal;
     let status: string | undefined;
     let message = "";
-    if (
+    if (proposal.kind === "trade_response") {
+      const outcome = tradeResponseOutcome(proposal, current);
+      if (outcome) {
+        status = outcome.status;
+        message = outcome.message;
+      }
+    } else if (
       proposal.kind === "lineup" &&
       action.original.scoringPeriod === current.scoringPeriod &&
       proposal.assignments?.every(
@@ -104,10 +112,10 @@ export async function reconcileActions() {
           "ESPN confirms the transaction is pending. No duplicate request was sent.";
       }
     }
-    if (status) {
+    if (status && status !== action.status) {
       await sql.transaction([
         sql`UPDATE actions SET status=${status},result=${message} WHERE id=${action.id} AND status IN ('submitted','unknown')`,
-        sql`INSERT INTO notification_outbox(id,operation_key,body) VALUES (${randomUUID()},${`reconciled:${action.id}:${status}`},${`Eve · ${proposal.title}: ${message}${action.external_id ? `\nESPN transaction: ${action.external_id}` : ""}`}) ON CONFLICT DO NOTHING`,
+        sql`INSERT INTO notification_outbox(id,operation_key,body) VALUES (${randomUUID()},${`reconciled:${action.id}:${status}`},${formatActionMessage(proposal, status, message)}) ON CONFLICT DO NOTHING`,
       ]);
     }
   }
