@@ -18,6 +18,7 @@ import { reviewNotificationStatus } from "./notification-policy";
 import { appOrigin } from "./site";
 import { formatReviewMessage } from "./messages";
 import { cacheTradeInbox } from "./trade-inbox";
+import { reviewSnapshot } from "./review-context";
 
 export const evidenceSchema = z.object({
   title: z.string().max(180),
@@ -168,10 +169,11 @@ export async function prepareReview(id: string, sessionId: string) {
       maxWaiverBid: settings.maxWaiverBid,
       protectedPlayers: settings.protectedPlayers,
     },
-    snapshot,
+    snapshot: reviewSnapshot(snapshot),
     pendingActions,
     lineup: optimizeLineup(snapshot),
     notes: [
+      "Opponent leagueRosters use compact rows. Map each row position to leagueRosterColumns. Null means unknown, not false or zero. Your own roster and freeAgents keep named fields. The full original snapshot is preserved for validation and execution.",
       "ESPN projections are the current numerical baseline. No independent paid projection feed is configured.",
       "Missing game times lock players conservatively. Missing projections prevent automatic optimization.",
       "Automatic mode submits eligible actions without owner approval; approve mode waits for the owner; observe mode records ideas only. Do not duplicate pending claims or offers. Propose moves only when they improve the team.",

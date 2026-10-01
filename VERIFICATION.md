@@ -1,5 +1,12 @@
 # Verification
 
+## October 1 review input-limit fix
+
+- The September 30 and October 1 daily reviews crossed the 80,000 cumulative input-token ceiling after loading league data and searching. Runtime traces show 81,199 and 84,422 input tokens, followed by a session-limit prompt. The turn-completion hook then mislabeled the parked run as an unexplained incomplete review.
+- Opponent rosters now use a shared column header and lossless player rows in the model-facing review context. The original snapshot remains stored unchanged for validation and execution. The failing snapshot serialized 41% smaller; IDs, projections, null values, locks, eligibility, and trade terms are preserved.
+- The input ceiling is 250,000 tokens; the $0.50 session cost ceiling, 12,000 output-token ceiling, and configured $10 monthly model budget remain in place. Limit events now record their specific cause before the completion hook runs. The usage ledger includes the model step index so successive steps do not collide.
+- Typecheck, production builds, and 51 tests pass. A fresh production review called prepare_review, three web searches, and finish_review, then saved a completed record. Its three model steps totaled 99,478 input tokens and $0.021 in reported model cost; the ledger matches the trace. It recorded holds, made no roster writes, and did not duplicate pending waivers. No session-limit prompt occurred.
+
 ## September 20 separate Photon project, short messages, and trade replies
 
 - Automatic incoming accept/decline is implemented under the existing trade policy. Each reply is bound to a real offer and rechecked before execution. Acceptances can include the exact required normal-roster drops; protected players, locks, expired offers, changed ownership, and changed terms are rejected.
