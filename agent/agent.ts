@@ -6,7 +6,6 @@ export default defineAgent({
     providerOptions: {
       gateway: {
         order: ["token-pass"],
-        only: ["token-pass"],
       },
     },
   },

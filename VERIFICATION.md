@@ -55,7 +55,7 @@ Vercel scope/project: `httpsamcs-projects/eve-fantasy`.
 
 ## October 4, 2026 — Kimi K3 through Token Pass
 
-- Changed Eve to `moonshotai/kimi-k3` with high reasoning. Gateway provider options set both `order` and `only` to `["token-pass"]`, so another provider cannot handle the request as a fallback.
-- A cURL request to the Gateway Responses API in the personal Vercel scope returned HTTP 200 and completed with high reasoning. Gateway metadata confirmed `finalProvider: "token-pass"`, one successful attempt, and no available fallback providers. Input: `Say hello.` Response: `Hello! 👋 How can I help you today?`
+- Changed Eve to `moonshotai/kimi-k3` with high reasoning. Gateway provider options set `order` to `["token-pass"]`; no `only` filter is set, so other providers remain available as fallbacks.
+- An initial cURL request restricted to Token Pass, sent to the Gateway Responses API in the personal Vercel scope, returned HTTP 200 and completed with high reasoning. Gateway metadata confirmed `finalProvider: "token-pass"`, one successful attempt, and no available fallback providers. Input: `Say hello.` Response: `Hello! 👋 How can I help you today?`
 - Existing review limits, action policies, and web search configuration are unchanged.
 - Validation: TypeScript, all 51 tests, and the production build passed. The temporary scope-specific test key was revoked after verification; no credential was written to source.
