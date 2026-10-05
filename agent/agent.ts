@@ -1,7 +1,15 @@
 import { defineAgent } from "eve";
 export default defineAgent({
-  model: "openai/gpt-5.6-terra",
-  reasoning: "medium",
+  model: "moonshotai/kimi-k3",
+  reasoning: "high",
+  modelOptions: {
+    providerOptions: {
+      gateway: {
+        order: ["token-pass"],
+        only: ["token-pass"],
+      },
+    },
+  },
   defaultTools: false,
   tool: false,
   limits: {

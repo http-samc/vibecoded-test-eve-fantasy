@@ -52,3 +52,10 @@ Vercel scope/project: `httpsamcs-projects/eve-fantasy`.
 - Uncertain ESPN outcomes stop further mutations until reconciliation establishes what happened. Explicit API rejections are recorded as failures rather than ambiguous writes.
 - ESPN cookie expiry or exhausted Gateway credits can require owner intervention. A $10/month Gateway project budget remains configured.
 - Eve's separate Photon project has verified inbound and delivered outbound messages. Oura's connector, sender, and incoming webhook routing are preserved.
+
+## October 4, 2026 — Kimi K3 through Token Pass
+
+- Changed Eve to `moonshotai/kimi-k3` with high reasoning. Gateway provider options set both `order` and `only` to `["token-pass"]`, so another provider cannot handle the request as a fallback.
+- A cURL request to the Gateway Responses API in the personal Vercel scope returned HTTP 200 and completed with high reasoning. Gateway metadata confirmed `finalProvider: "token-pass"`, one successful attempt, and no available fallback providers. Input: `Say hello.` Response: `Hello! 👋 How can I help you today?`
+- Existing review limits, action policies, and web search configuration are unchanged.
+- Validation: TypeScript, all 51 tests, and the production build passed. The temporary scope-specific test key was revoked after verification; no credential was written to source.
