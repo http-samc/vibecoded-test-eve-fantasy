@@ -65,3 +65,8 @@ Vercel scope/project: `httpsamcs-projects/eve-fantasy`.
 - Removed the app monthly spending gate from reviews and both conversation channels. Removed the obsolete budget setting and UI input; the dashboard retains reported spend and labels it as uncapped.
 - Disabled the agent session dollar cap explicitly. Token and duration limits and ESPN transaction controls remain in effect.
 - Removed the Vercel AI Gateway budget for the Eve project under the personal scope.
+
+## October 13, 2026 — Revert Token Pass routing
+
+- Removed the explicit Token Pass provider preference after production rejected that provider with OIDC authentication. Kimi K3, high reasoning, and disabled AI dollar limits are retained. AI Gateway now uses its default provider routing.
+- The earlier local API-key test did not cover production OIDC authentication. Verification for this change uses the deployed agent runtime.
