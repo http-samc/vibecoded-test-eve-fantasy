@@ -394,7 +394,7 @@ export function Dashboard({
                   {
                     label: "MODEL SPEND",
                     value: `$${data.monthCost.toFixed(2)}`,
-                    detail: `$${settings.monthlyAiBudget.toFixed(0)} monthly model budget`,
+                    detail: "This month · no AI spending limit",
                     icon: Wallet,
                   },
                 ].map((s) => (
@@ -1109,7 +1109,7 @@ function SettingsPanel({
             </label>
             <p className="small muted full">
               Automatic mode lets Eve submit eligible moves without waiting for
-              you. It respects ESPN locks, protected players, and your spending
+              you. It respects ESPN locks, protected players, and your waiver bid
               limit, then texts you the outcome.
             </p>
             <label className="full">
@@ -1118,19 +1118,6 @@ function SettingsPanel({
                 value={protectedText}
                 onChange={(e) => setProtectedText(e.target.value)}
                 placeholder="Players Eve should never drop or trade"
-              />
-            </label>
-            <label>
-              Monthly model budget ($)
-              <input
-                type="number"
-                min={0}
-                max={100}
-                step={1}
-                value={form.monthlyAiBudget}
-                onChange={(e) =>
-                  setForm({ ...form, monthlyAiBudget: Number(e.target.value) })
-                }
               />
             </label>
             <label>
@@ -1146,9 +1133,8 @@ function SettingsPanel({
               />
             </label>
             <p className="small muted full">
-              The budget stops new reviews at the model-spend limit. A final
-              model call can cross it; search, Photon, and hosting are billed
-              separately.
+              AI spending is tracked without a spending limit. Search, Photon,
+              and hosting are billed separately.
             </p>
           </div>
         </section>

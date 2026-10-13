@@ -1,7 +1,6 @@
 import { connectPhotonCredentials } from "@vercel/connect/eve";
 import { photonIMessageChannel, defaultPhotonAuth } from "eve/channels/photon";
 import { getSettings } from "../../lib/db";
-import { checkBudget } from "../../lib/reviews";
 import { isPhotonOwner } from "../../lib/photon-owner";
 
 export default photonIMessageChannel({
@@ -16,7 +15,6 @@ export default photonIMessageChannel({
       !isPhotonOwner(message.author, settings.photonRecipient, ctx.thread.isDM)
     )
       return null;
-    await checkBudget();
     return { auth: defaultPhotonAuth(message) };
   },
 });

@@ -95,17 +95,7 @@ export const reportSchema = z.object({
     .default([]),
   evidence: z.array(evidenceSchema).max(12),
 });
-export async function checkBudget() {
-  const s = await getSettings();
-  const rows =
-    await db()`SELECT COALESCE(sum(cost),0) AS cost FROM model_usage WHERE created_at>=date_trunc('month',now())`;
-  if (Number(rows[0].cost) >= s.monthlyAiBudget)
-    throw new Error(
-      "The monthly model budget is reached. Increase it in Settings to start another review.",
-    );
-}
 export async function startReview(trigger: string, occurrence: string) {
-  await checkBudget();
   const id = await claimReview(trigger, occurrence);
   if (!id) return { started: false };
   try {

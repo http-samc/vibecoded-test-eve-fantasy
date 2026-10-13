@@ -50,7 +50,7 @@ Vercel scope/project: `httpsamcs-projects/eve-fantasy`.
 - Real lineup execution is verified. Waiver and trade submission paths have policy/payload tests and are enabled under standing authorization, but no artificial acquisition or trade was made just to test them.
 - New outgoing offers use equal player counts. Incoming acceptance supports unequal counts with checked roster drops. Live acceptance and decline have not been exercised against an active real offer; request shapes are grounded in authenticated historical ESPN records and fixture tests.
 - Uncertain ESPN outcomes stop further mutations until reconciliation establishes what happened. Explicit API rejections are recorded as failures rather than ambiguous writes.
-- ESPN cookie expiry or exhausted Gateway credits can require owner intervention. A $10/month Gateway project budget remains configured.
+- ESPN cookie expiry or exhausted Gateway credits can require owner intervention. Eve has no app or Gateway project spending cap.
 - Eve's separate Photon project has verified inbound and delivered outbound messages. Oura's connector, sender, and incoming webhook routing are preserved.
 
 ## October 4, 2026 — Kimi K3 through Token Pass
@@ -59,3 +59,9 @@ Vercel scope/project: `httpsamcs-projects/eve-fantasy`.
 - An initial cURL request restricted to Token Pass, sent to the Gateway Responses API in the personal Vercel scope, returned HTTP 200 and completed with high reasoning. Gateway metadata confirmed `finalProvider: "token-pass"`, one successful attempt, and no available fallback providers. Input: `Say hello.` Response: `Hello! 👋 How can I help you today?`
 - Existing review limits, action policies, and web search configuration are unchanged.
 - Validation: TypeScript, all 51 tests, and the production build passed. The temporary scope-specific test key was revoked after verification; no credential was written to source.
+
+## October 13, 2026 — Remove AI spending caps
+
+- Removed the app monthly spending gate from reviews and both conversation channels. Removed the obsolete budget setting and UI input; the dashboard retains reported spend and labels it as uncapped.
+- Disabled the agent session dollar cap explicitly. Token and duration limits and ESPN transaction controls remain in effect.
+- Removed the Vercel AI Gateway budget for the Eve project under the personal scope.

@@ -22,7 +22,6 @@ export const settingsSchema = z.object({
   lineupMode: z.enum(["observe", "approve", "automatic"]),
   waiverMode: z.enum(["observe", "approve", "automatic"]),
   tradeMode: z.enum(["observe", "approve", "automatic"]),
-  monthlyAiBudget: z.number().min(0).max(100),
   maxWaiverBid: z.number().min(0).max(1000),
   protectedPlayers: z.array(z.string().trim().min(1).max(100)).max(50),
   photonRecipient: z

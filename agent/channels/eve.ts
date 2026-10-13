@@ -1,6 +1,5 @@
 import { eveChannel } from "eve/channels/eve";
 import { equal, requestAuthorized } from "../../lib/crypto";
-import { checkBudget } from "../../lib/reviews";
 export default eveChannel({
   auth: [
     async (request) => {
@@ -33,7 +32,6 @@ export default eveChannel({
   uploadPolicy: "disabled",
   turnPolicy: "queue",
   async onMessage(ctx) {
-    await checkBudget();
     return { auth: ctx.eve.caller };
   },
 });

@@ -46,11 +46,11 @@ vercel crons ls --scope httpsamcs-projects
 
 The migration is idempotent. Preview deployments must keep scheduling and writes disabled. The initial database integration connects the same database across environments; provision an isolated preview branch before testing real mutations.
 
-## Reliability and budgets
+## Reliability and usage
 
 Eve persists agent sessions through Workflow. Postgres is the durable source of business state. Completed reviews and outbox intents are committed together; repeat calls do not duplicate action rows. Unknown write or delivery outcomes are recorded as `unknown`, never blindly retried. Concurrent mutations are serialized; stale proposals expire. Pending transaction receipts are checked on scheduled ticks. If ESPN cannot identify an uncertain transaction, execution stays blocked for manual reconciliation. FAAB checks reserve pending app bids, but external bids can still race; ESPN remains the final budget authority.
 
-A $10/month AI Gateway project budget is configured. The app's model budget blocks new reviews once reported model spend reaches the selected threshold. Provider search, Photon, hosting, and database billing are separate; a model call in progress can cross the app threshold. Changing the app setting does not automatically change the Gateway budget. Gateway BYOK spend is not covered by its system-credential budget.
+AI model spend is tracked for visibility without an app monthly budget or per-session dollar cap. The Vercel AI Gateway project budget has been removed. Token and duration limits still bound agent sessions. Provider search, Photon, hosting, and database billing are separate. ESPN waiver bid limits remain in effect.
 
 The paid model route initially returned `byok_requires_paid_credits`. An owner-approved one-time $5 top-up resolved it; production model calls, application tool use, and Gateway web search are now verified. Do not substitute an unrelated team's API key for project OIDC.
 

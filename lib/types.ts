@@ -12,7 +12,6 @@ export interface Settings {
   lineupMode: PolicyMode;
   waiverMode: PolicyMode;
   tradeMode: PolicyMode;
-  monthlyAiBudget: number;
   maxWaiverBid: number;
   protectedPlayers: string[];
   photonRecipient: string;
@@ -29,7 +28,6 @@ export const defaultSettings: Settings = {
   lineupMode: "observe",
   waiverMode: "observe",
   tradeMode: "observe",
-  monthlyAiBudget: 10,
   maxWaiverBid: 0,
   protectedPlayers: [],
   photonRecipient: "",
